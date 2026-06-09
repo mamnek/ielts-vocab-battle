@@ -33,6 +33,7 @@ const player2Name = document.querySelector('#player2-score .name');
 const player2Score = document.querySelector('#player2-score .score');
 const countdownEl = document.getElementById('countdown');
 const englishWordEl = document.getElementById('english-word');
+const btnSpeak = document.getElementById('btn-speak');
 const answerInput = document.getElementById('answer-input');
 const btnSubmit = document.getElementById('btn-submit');
 const resultMessage = document.getElementById('result-message');
@@ -40,6 +41,41 @@ const resultMessage = document.getElementById('result-message');
 let currentRoomCode = '';
 let myName = '';
 let timerInterval;
+
+// Hàm phát âm từ vựng
+function playAudio(word) {
+    if ('speechSynthesis' in window) {
+        // Hủy các giọng đọc cũ đang dở (nếu có)
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(word);
+        utterance.lang = 'en-US'; 
+        utterance.rate = 0.9; // Đọc chậm một chút
+        window.speechSynthesis.speak(utterance);
+    }
+}
+
+// Lắng nghe sự kiện click nút loa
+if (btnSpeak) {
+    btnSpeak.addEventListener('click', () => {
+        const word = englishWordEl.textContent;
+        if (word && word !== 'Loading...') {
+            playAudio(word);
+            
+            // Tạo hiệu ứng click
+            btnSpeak.style.transform = 'scale(0.9)';
+            setTimeout(() => btnSpeak.style.transform = 'scale(1)', 150);
+        }
+    });
+}
+
+// Lắng nghe phím tắt Tab để phát âm
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && arenaScreen.classList.contains('active')) {
+        e.preventDefault(); // Ngăn Tab nhảy sang ô khác
+        if (btnSpeak) btnSpeak.click();
+    }
+});
 
 function showScreen(screen) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -269,6 +305,11 @@ const totalQDisplay = document.getElementById('total-q-display');
 // Bắt đầu vòng mới: hiển thị từ mới và reset UI
 socket.on('new_word', (data) => {
     englishWordEl.textContent = data.word;
+    if (btnSpeak) btnSpeak.style.display = 'flex'; // Hiển thị nút loa
+    
+    // Tự động phát âm
+    playAudio(data.word);
+
     if (currentQDisplay && totalQDisplay) {
         currentQDisplay.textContent = data.current_q;
         totalQDisplay.textContent = data.total_q;
