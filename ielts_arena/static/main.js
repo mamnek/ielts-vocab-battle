@@ -42,6 +42,13 @@ let currentRoomCode = '';
 let myName = '';
 let timerInterval;
 
+// Khởi tạo 1 session ID cố định cho người dùng này (để reconnect khi load lại tab)
+let mySessionId = localStorage.getItem('ielts_arena_session_id');
+if (!mySessionId) {
+    mySessionId = Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('ielts_arena_session_id', mySessionId);
+}
+
 // Hàm phát âm từ vựng
 function playAudio(word) {
     if ('speechSynthesis' in window) {
@@ -58,9 +65,9 @@ function playAudio(word) {
 // Lắng nghe sự kiện click nút loa
 if (btnSpeak) {
     btnSpeak.addEventListener('click', () => {
-        const word = englishWordEl.textContent;
-        if (word && word !== 'Loading...') {
-            playAudio(word);
+        const wordToSpeak = englishWordEl.dataset.originalEn || englishWordEl.textContent;
+        if (wordToSpeak && wordToSpeak !== 'Loading...') {
+            playAudio(wordToSpeak);
             
             // Tạo hiệu ứng click
             btnSpeak.style.transform = 'scale(0.9)';
@@ -205,6 +212,7 @@ btnCreate.addEventListener('click', () => {
     const vocabType = vocabTypeSelect.value;
     const customSetId = customVocabIdInput.value.trim();
     const playMode = playModeSelect ? playModeSelect.value : 'multi';
+    const qType = document.getElementById('question-type') ? document.getElementById('question-type').value : 'en-vi';
     const qCount = parseInt(randomQuestionCountInput.value) || 10;
     const vTopic = vocabTopicSelect ? vocabTopicSelect.value : 'all';
     
@@ -218,8 +226,10 @@ btnCreate.addEventListener('click', () => {
         vocab_type: vocabType,
         custom_set_id: customSetId,
         play_mode: playMode,
+        q_type: qType,
         question_count: qCount,
-        vocab_topic: vTopic
+        vocab_topic: vTopic,
+        session_id: mySessionId
     });
 });
 
@@ -228,14 +238,14 @@ btnJoin.addEventListener('click', () => {
     const code = roomCodeInput.value.trim();
     if (!code) return lobbyMessage.textContent = 'Vui lòng nhập mã phòng!';
     myName = getPlayerName();
-    socket.emit('join_room', { name: myName, room_code: code });
+    socket.emit('join_room', { name: myName, room_code: code, session_id: mySessionId });
 });
 
 // Gửi đáp án (Hỗ trợ nút Submit và phím Enter)
 function submitAnswer() {
     const answer = answerInput.value;
     if (!answer) return;
-    socket.emit('submit_answer', { room_code: currentRoomCode, answer: answer });
+    socket.emit('submit_answer', { room_code: currentRoomCode, answer: answer, session_id: mySessionId });
     answerInput.value = '';
 }
 btnSubmit.addEventListener('click', submitAnswer);
@@ -243,6 +253,17 @@ answerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitA
 
 
 // --- LẮNG NGHE SỰ KIỆN TỪ SERVER ---
+
+socket.on('connect', () => {
+    // Nếu mất kết nối và có lại, tự động báo cho server khôi phục session
+    if (currentRoomCode) {
+        socket.emit('reconnect_session', { room_code: currentRoomCode, session_id: mySessionId });
+    }
+});
+
+socket.on('reconnect_success', (data) => {
+    console.log('Khôi phục kết nối thành công với phòng:', data.room_code);
+});
 
 socket.on('room_created', (data) => {
     currentRoomCode = data.room_code;
@@ -305,10 +326,17 @@ const totalQDisplay = document.getElementById('total-q-display');
 // Bắt đầu vòng mới: hiển thị từ mới và reset UI
 socket.on('new_word', (data) => {
     englishWordEl.textContent = data.word;
-    if (btnSpeak) btnSpeak.style.display = 'flex'; // Hiển thị nút loa
+    englishWordEl.dataset.originalEn = data.original_en;
+    englishWordEl.dataset.qType = data.q_type;
     
-    // Tự động phát âm
-    playAudio(data.word);
+    if (data.q_type === 'vi-en') {
+        answerInput.placeholder = 'Nhập từ tiếng Anh (VD: hello)';
+        if (btnSpeak) btnSpeak.style.display = 'none'; // Không hiển thị lúc đang hỏi
+    } else {
+        answerInput.placeholder = 'Nhập nghĩa tiếng Việt (VD: xin chào)';
+        if (btnSpeak) btnSpeak.style.display = 'flex';
+        playAudio(data.original_en);
+    }
 
     if (currentQDisplay && totalQDisplay) {
         currentQDisplay.textContent = data.current_q;
@@ -342,13 +370,45 @@ socket.on('correct_answer', (data) => {
     answerInput.disabled = true;
     btnSubmit.disabled = true;
     
-    resultMessage.textContent = `🎯 ${data.winner} +10đ! Nghĩa: ${data.correct_answer}`;
+    resultMessage.textContent = `🎯 ${data.winner} +10đ! Đáp án: ${data.correct_answer}`;
     resultMessage.className = 'result-message success';
     
     // Cập nhật điểm ngay lập tức
     const players = data.players;
     player1Score.textContent = players[0].score;
     if (players[1]) player2Score.textContent = players[1].score;
+    
+    if (englishWordEl.dataset.qType === 'vi-en') {
+        playAudio(englishWordEl.dataset.originalEn);
+        if (btnSpeak) btnSpeak.style.display = 'flex';
+    }
+});
+
+// Xử lý chế độ sync
+socket.on('wait_for_other', (data) => {
+    answerInput.disabled = true;
+    btnSubmit.disabled = true;
+    resultMessage.textContent = `⏳ ${data.message}`;
+    resultMessage.className = 'result-message';
+    resultMessage.style.color = '#eab308'; // Màu vàng warning
+});
+
+socket.on('sync_result', (data) => {
+    clearInterval(timerInterval);
+    answerInput.disabled = true;
+    btnSubmit.disabled = true;
+    
+    resultMessage.textContent = `🎯 ${data.winners.join(' và ')} đúng! Đáp án: ${data.correct_answer}`;
+    resultMessage.className = 'result-message success';
+    
+    const players = data.players;
+    player1Score.textContent = players[0].score;
+    if (players[1]) player2Score.textContent = players[1].score;
+    
+    if (englishWordEl.dataset.qType === 'vi-en') {
+        playAudio(englishWordEl.dataset.originalEn);
+        if (btnSpeak) btnSpeak.style.display = 'flex';
+    }
 });
 
 // Hết giờ
@@ -358,6 +418,11 @@ socket.on('timeout', (data) => {
     btnSubmit.disabled = true;
     resultMessage.textContent = `⏰ Hết giờ! Đáp án: ${data.correct_answer}`;
     resultMessage.className = 'result-message error';
+    
+    if (englishWordEl.dataset.qType === 'vi-en') {
+        playAudio(englishWordEl.dataset.originalEn);
+        if (btnSpeak) btnSpeak.style.display = 'flex';
+    }
 });
 
 // Nhập sai

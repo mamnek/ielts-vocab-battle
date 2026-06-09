@@ -76,6 +76,7 @@ def on_create_room(data):
     vocab_type = data.get('vocab_type', 'default')
     custom_set_id = data.get('custom_set_id', '').upper()
     play_mode = data.get('play_mode', 'multi')
+    q_type = data.get('q_type', 'en-vi')
     vocab_topic = data.get('vocab_topic', 'all')
     
     try:
@@ -109,10 +110,12 @@ def on_create_room(data):
             
     room_code = generate_room_code()
     
+    session_id = data.get('session_id', request.sid)
+    
     # Khởi tạo state cho phòng
     rooms[room_code] = {
         'players': {
-            request.sid: {'name': player_name, 'score': 0}
+            session_id: {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True}
         },
         'vocab': room_vocab,
         'used_words': [],
@@ -122,6 +125,8 @@ def on_create_room(data):
         'current_question': 0,
         'total_questions': total_questions,
         'mode': play_mode,
+        'q_type': q_type,
+        'sync_answers': {},
         'lock': threading.Lock() # Khóa an toàn chống Race Condition
     }
     
@@ -139,28 +144,64 @@ def on_create_room(data):
 def on_join_room(data):
     player_name = data.get('name', 'Player 2')
     room_code = data.get('room_code', '').upper()
+    session_id = data.get('session_id', request.sid)
     
     if room_code not in rooms:
-        emit('error', {'message': 'Phòng không tồn tại!'})
+        emit('error', {'message': 'Phòng không tồn tại hoặc đã hết hạn!'})
         return
         
     room = rooms[room_code]
-    if len(room['players']) >= 2:
+    active_players = [p for p in room['players'].values() if p.get('connected', True)]
+    
+    if len(active_players) >= 2 and session_id not in room['players']:
         emit('error', {'message': 'Phòng đã đầy!'})
         return
         
-    # Thêm người chơi 2 vào phòng
-    room['players'][request.sid] = {'name': player_name, 'score': 0}
+    # Thêm hoặc cập nhật người chơi trong phòng
+    if session_id not in room['players']:
+        room['players'][session_id] = {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True}
+    else:
+        room['players'][session_id]['sid'] = request.sid
+        room['players'][session_id]['connected'] = True
+        
     join_room(room_code)
     
     emit('room_joined', {'room_code': room_code})
     
-    players_data = list(room['players'].values())
-    # Gửi sự kiện bắt đầu game tới cả 2 người
-    socketio.emit('game_start', {'players': players_data}, room=room_code)
+    # Chỉ bắt đầu game nếu đủ 2 người và game chưa bắt đầu (vòng 0)
+    if len(room['players']) >= 2 and room['round_id'] == 0:
+        players_data = list(room['players'].values())
+        socketio.emit('game_start', {'players': players_data}, room=room_code)
+        socketio.start_background_task(next_word, room_code)
+
+@socketio.on('reconnect_session')
+def on_reconnect_session(data):
+    room_code = data.get('room_code', '').upper()
+    session_id = data.get('session_id')
     
-    # Kích hoạt vòng đấu đầu tiên
-    socketio.start_background_task(next_word, room_code)
+    if room_code in rooms and session_id in rooms[room_code]['players']:
+        room = rooms[room_code]
+        room['players'][session_id]['sid'] = request.sid
+        room['players'][session_id]['connected'] = True
+        join_room(room_code)
+        
+        if room['round_id'] > 0:
+            players_data = list(room['players'].values())
+            emit('game_start', {'players': players_data})
+            
+            if room['current_word'] and not room['answered']:
+                current_qt = room.get('current_q_type', 'en-vi')
+                display_word = room['current_word']['vi'] if current_qt == 'vi-en' else room['current_word']['en']
+                emit('new_word', {
+                    'word': display_word, 
+                    'original_en': room['current_word']['en'],
+                    'q_type': current_qt,
+                    'time': 15,
+                    'current_q': room['current_question'],
+                    'total_q': room['total_questions']
+                })
+        else:
+            emit('reconnect_success', {'room_code': room_code})
 
 def next_word(room_code):
     if room_code not in rooms: return
@@ -198,14 +239,27 @@ def next_word(room_code):
         room['used_words'].append(word_obj['en'])
         room['current_word'] = word_obj
         room['answered'] = False
+        room['sync_answers'] = {} # Reset cho chế độ sync
+        
+        qt = room.get('q_type', 'en-vi')
+        if qt == 'mixed':
+            current_qt = random.choice(['en-vi', 'vi-en'])
+        else:
+            current_qt = qt
+        room['current_q_type'] = current_qt
+        
         room['round_id'] += 1 # Tăng ID vòng đấu để quản lý timer độc lập
         current_round = room['round_id']
         current_q = room['current_question']
         total_q = room['total_questions']
         
-    # Emit từ tiếng Anh cho cả 2 client
+    display_word = word_obj['vi'] if current_qt == 'vi-en' else word_obj['en']
+    
+    # Emit từ cho cả 2 client
     socketio.emit('new_word', {
-        'word': word_obj['en'], 
+        'word': display_word, 
+        'original_en': word_obj['en'],
+        'q_type': current_qt,
         'time': 15,
         'current_q': current_q,
         'total_q': total_q
@@ -214,6 +268,28 @@ def next_word(room_code):
     # Bắt đầu luồng đếm ngược thời gian
     socketio.start_background_task(word_timer, room_code, current_round)
 
+def evaluate_sync_round(room_code, room):
+    correct_ans = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
+    winners = []
+    
+    for sid, ans in room['sync_answers'].items():
+        if check_answer(ans, correct_ans):
+            room['players'][sid]['score'] += 10
+            winners.append(room['players'][sid]['name'])
+            
+    players_data = list(room['players'].values())
+    
+    if winners:
+        socketio.emit('sync_result', {
+            'winners': winners,
+            'players': players_data,
+            'correct_answer': correct_ans
+        }, room=room_code)
+    else:
+        socketio.emit('timeout', {'correct_answer': correct_ans}, room=room_code)
+        
+    socketio.start_background_task(delayed_next_word, room_code)
+
 def word_timer(room_code, round_id):
     socketio.sleep(15) # Chờ 15s
     
@@ -221,13 +297,17 @@ def word_timer(room_code, round_id):
     room = rooms[room_code]
     
     with room['lock']:
-        # Nếu đã qua 15s, vẫn ở round cũ và chưa ai trả lời đúng
+        # Nếu đã qua 15s, vẫn ở round cũ và chưa ai trả lời đúng (hoặc chưa xong sync)
         if room['round_id'] == round_id and not room['answered']:
             room['answered'] = True # Khóa không cho nhận đáp án nữa
-            socketio.emit('timeout', {'correct_answer': room['current_word']['vi']}, room=room_code)
             
-            # Đợi 2 giây rồi tự động qua từ mới
-            socketio.start_background_task(delayed_next_word, room_code)
+            if room.get('mode') == 'sync':
+                evaluate_sync_round(room_code, room)
+            else:
+                correct_answer = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
+                socketio.emit('timeout', {'correct_answer': correct_answer}, room=room_code)
+                # Đợi 2 giây rồi tự động qua từ mới
+                socketio.start_background_task(delayed_next_word, room_code)
 
 def delayed_next_word(room_code):
     socketio.sleep(2)
@@ -238,46 +318,68 @@ def on_submit_answer(data):
     room_code = data.get('room_code')
     # Tiền xử lý đáp án: Chuyển chữ thường, xóa khoảng trắng đầu/cuối
     answer = data.get('answer', '').strip().lower()
+    session_id = data.get('session_id', request.sid)
     
     if room_code not in rooms: return
     room = rooms[room_code]
     
-    # --- LOGIC XỬ LÝ RACE CONDITION ---
-    # Sử dụng Block Lock để đảm bảo chỉ có 1 request được kiểm tra và cộng điểm tại 1 thời điểm
+        # Sử dụng Block Lock để đảm bảo chỉ có 1 request được kiểm tra và cộng điểm tại 1 thời điểm
     with room['lock']:
-        # Nếu đã có người trả lời đúng trước đó (trong cùng mili-giây) thì bỏ qua request này
+        # Nếu đã trả lời xong hoặc không có từ hiện tại
         if room['answered'] or room['current_word'] is None:
             return 
             
-        correct_answer = room['current_word']['vi'].strip().lower()
+        correct_answer = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
+        correct_answer = correct_answer.strip().lower()
         
-        if check_answer(answer, correct_answer):
-            # Gán cờ hiệu thành True. Các request chậm hơn dù 1ms bị chặn lại bởi if phía trên.
-            room['answered'] = True
-            room['players'][request.sid]['score'] += 10
+        if room.get('mode') == 'sync':
+            room['sync_answers'][session_id] = answer
+            emit('wait_for_other', {'message': 'Đang chờ đối thủ...'})
             
-            players_data = list(room['players'].values())
-            winner_name = room['players'][request.sid]['name']
-            
-            socketio.emit('correct_answer', {
-                'winner': winner_name,
-                'players': players_data,
-                'correct_answer': room['current_word']['vi']
-            }, room=room_code)
-            
-            socketio.start_background_task(delayed_next_word, room_code)
+            if len(room['sync_answers']) == len(room['players']):
+                room['answered'] = True
+                evaluate_sync_round(room_code, room)
         else:
-            emit('wrong_answer', {'message': 'Sai rồi'})
+            if check_answer(answer, correct_answer):
+                room['answered'] = True
+                room['players'][session_id]['score'] += 10
+                
+                players_data = list(room['players'].values())
+                winner_name = room['players'][session_id]['name']
+                
+                socketio.emit('correct_answer', {
+                    'winner': winner_name,
+                    'players': players_data,
+                    'correct_answer': correct_answer
+                }, room=room_code)
+                
+                socketio.start_background_task(delayed_next_word, room_code)
+            else:
+                emit('wrong_answer', {'message': 'Sai rồi'})
 
 @socketio.on('disconnect')
 def on_disconnect():
     for room_code, room in list(rooms.items()):
-        if request.sid in room['players']:
-            del room['players'][request.sid]
-            socketio.emit('player_disconnected', room=room_code)
-            # Dọn dẹp phòng trống
-            if len(room['players']) == 0:
-                del rooms[room_code]
+        disconnected_session = None
+        for sess_id, p in list(room['players'].items()):
+            if p.get('sid') == request.sid:
+                disconnected_session = sess_id
+                p['connected'] = False
+                break
+                
+        if disconnected_session:
+            # Gửi sự kiện mất kết nối
+            socketio.emit('player_disconnected', {'message': 'Một người chơi bị mất kết nối!'}, room=room_code)
+            
+            # Xóa phòng sau 3 phút nếu không có ai quay lại
+            def cleanup_room(code):
+                socketio.sleep(180)
+                if code in rooms:
+                    active = [p for p in rooms[code]['players'].values() if p.get('connected', True)]
+                    if len(active) == 0:
+                        del rooms[code]
+                        
+            socketio.start_background_task(cleanup_room, room_code)
             break
 
 @socketio.on('save_vocab_set')
