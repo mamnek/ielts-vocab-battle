@@ -92,6 +92,63 @@ btnAddPair.addEventListener('click', () => {
     pairDiv.querySelector('.vocab-en').focus();
 });
 
+// Xử lý trích xuất hàng loạt
+const bulkVocabInput = document.getElementById('bulk-vocab-input');
+const btnParseBulk = document.getElementById('btn-parse-bulk');
+
+if (btnParseBulk && bulkVocabInput) {
+    btnParseBulk.addEventListener('click', () => {
+        const text = bulkVocabInput.value.trim();
+        if (!text) {
+            vocabMessage.textContent = 'Vui lòng dán danh sách từ vào ô trên!';
+            vocabMessage.style.color = 'var(--error)';
+            return;
+        }
+
+        const lines = text.split('\n');
+        let addedCount = 0;
+
+        lines.forEach(line => {
+            // Hỗ trợ phân cách bằng dấu '|', '-', hoặc ':'
+            const parts = line.split(/\||-|:/);
+            if (parts.length >= 2) {
+                const en = parts[0].trim();
+                const vi = parts.slice(1).join(' ').trim(); // Đề phòng có nhiều dấu phân cách ở phần nghĩa
+                
+                if (en && vi) {
+                    const pairDiv = document.createElement('div');
+                    pairDiv.className = 'vocab-pair input-area';
+                    pairDiv.style.marginBottom = '10px';
+                    pairDiv.innerHTML = `
+                        <input type="text" class="vocab-en" placeholder="Tiếng Anh" value="${en}" required>
+                        <input type="text" class="vocab-vi" placeholder="Tiếng Việt" value="${vi}" required>
+                    `;
+                    vocabPairsContainer.appendChild(pairDiv);
+                    addedCount++;
+                }
+            }
+        });
+
+        if (addedCount > 0) {
+            bulkVocabInput.value = ''; // clear input
+            vocabMessage.textContent = `Thành công! Đã trích xuất ${addedCount} từ vựng.`;
+            vocabMessage.style.color = 'var(--success)';
+            
+            // Xóa các ô trống ban đầu nếu chúng đang trống
+            document.querySelectorAll('.vocab-pair').forEach(pair => {
+                const enVal = pair.querySelector('.vocab-en').value;
+                const viVal = pair.querySelector('.vocab-vi').value;
+                if (!enVal && !viVal) {
+                    pair.remove();
+                }
+            });
+        } else {
+            vocabMessage.textContent = 'Không tìm thấy từ hợp lệ. Vui lòng kiểm tra định dạng (Từ | Nghĩa)';
+            vocabMessage.style.color = 'var(--error)';
+        }
+    });
+}
+
 // Lưu bộ từ vựng lên Server
 btnSaveVocab.addEventListener('click', () => {
     const pairs = [];

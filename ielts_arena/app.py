@@ -13,15 +13,18 @@ app.config['SECRET_KEY'] = 'ielts-secret-key-prod-ready'
 # Khởi tạo SocketIO dùng threading (tương thích hoàn hảo với Python 3.13)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Tải dữ liệu từ vựng
-with open('vocab.json', 'r', encoding='utf-8') as f:
+VOCAB_FILE_PATH = os.path.join(BASE_DIR, 'vocab.json')
+with open(VOCAB_FILE_PATH, 'r', encoding='utf-8') as f:
     vocab_list = json.load(f)
 
 # Biến lưu trữ trạng thái các phòng
 rooms = {}
 
 # Quản lý bộ từ vựng tự tạo
-CUSTOM_VOCAB_FILE = 'custom_vocabs.json'
+CUSTOM_VOCAB_FILE = os.path.join(BASE_DIR, 'custom_vocabs.json')
 if not os.path.exists(CUSTOM_VOCAB_FILE):
     with open(CUSTOM_VOCAB_FILE, 'w', encoding='utf-8') as f:
         json.dump({}, f)

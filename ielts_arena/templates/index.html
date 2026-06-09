@@ -69,6 +69,16 @@
             <h1>Tạo Bộ Từ Vựng</h1>
             <div class="card" style="max-height: 80vh; overflow-y: auto;">
                 <p style="margin-bottom: 15px; color: var(--text-muted); font-size: 0.95rem;">Nhập các cặp từ tiếng Anh - Việt (tối thiểu 3 từ):</p>
+                
+                <!-- Nhập hàng loạt -->
+                <div style="margin-bottom: 20px; text-align: left; background: #1e293b; padding: 15px; border-radius: 8px;">
+                    <label style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 10px; display: block;">Hoặc dán danh sách từ (Hỗ trợ phân cách bằng dấu <strong>|</strong>, <strong>-</strong>, hoặc <strong>:</strong>)</label>
+                    <textarea id="bulk-vocab-input" rows="4" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 0.95rem; resize: vertical; margin-bottom: 10px; outline: none;" placeholder="Ví dụ:&#10;apple | quả táo&#10;abandon - từ bỏ"></textarea>
+                    <button id="btn-parse-bulk" class="btn secondary" style="width: 100%; padding: 10px; font-size: 0.95rem;">Trích xuất tự động</button>
+                </div>
+                
+                <div class="divider" style="margin: 20px 0;">HOẶC NHẬP TỪNG TỪ</div>
+
                 <div id="vocab-pairs-container">
                     <div class="vocab-pair input-area" style="margin-bottom: 10px;">
                         <input type="text" class="vocab-en" placeholder="Tiếng Anh (VD: hello)" required>
