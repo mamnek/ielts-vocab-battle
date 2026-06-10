@@ -9,6 +9,8 @@
 <body>
     <button id="btn-show-create-vocab" class="btn secondary" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 15px; font-size: 0.9rem; z-index: 10;">+ Tạo bộ từ vựng</button>
 
+    <button id="btn-show-create-vocab" class="btn secondary" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 15px; font-size: 0.9rem; z-index: 10;">+ Tạo bộ từ vựng</button>
+
     <div id="app">
         <!-- Màn hình 1: Sảnh chờ -->
         <div id="lobby-screen" class="screen active">
@@ -58,6 +60,52 @@
                 <input type="text" id="room-code-input" placeholder="Nhập mã phòng (VD: A1B2C3)" autocomplete="off">
                 <button id="btn-join" class="btn secondary">Tham gia phòng</button>
             </div>
+            
+            <div class="brand-donate">
+                <span style="color: rgba(255, 255, 255, 0.5); font-weight: bold; font-size: 1.1rem; letter-spacing: 1px; font-family: 'Courier New', Courier, monospace;">by mam</span>
+                <div class="donate-container" style="position: relative;">
+                    <button id="btn-donate" onclick="var info = document.getElementById('donate-info'); info.style.display = (info.style.display === 'none') ? 'block' : 'none';" style="padding: 8px 15px; font-size: 0.85rem; background: #fbbf24; color: #0f172a; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3); transition: transform 0.2s;">❤️ Ủng hộ tại đây</button>
+                    <div id="donate-info" style="display: none; position: absolute; left: 0; background: #1e293b; border: 1px solid #334155; padding: 15px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: max-content; z-index: 20;">
+                        <p style="margin: 0 0 5px 0; color: #fbbf24; font-weight: bold; font-size: 0.95rem;">Cảm ơn bạn đã ủng hộ!</p>
+                        <p style="margin: 0; color: white; font-size: 0.95rem;">Ngân hàng: <strong>MB Bank</strong></p>
+                        <p style="margin: 5px 0 0 0; color: white; font-size: 0.95rem; user-select: text;">STK: <strong style="color: #60a5fa;">120820108386</strong></p>
+                    </div>
+                </div>
+            </div>
+            <style>
+                #btn-donate:active {
+                    transform: scale(0.95);
+                }
+                .brand-donate {
+                    position: fixed; 
+                    top: 20px; 
+                    left: 20px; 
+                    z-index: 100; 
+                    display: flex; 
+                    align-items: center; 
+                    gap: 15px; 
+                    user-select: none;
+                }
+                #donate-info {
+                    top: 120%;
+                    bottom: auto;
+                }
+                @media (max-width: 600px) {
+                    .brand-donate {
+                        position: static;
+                        display: flex;
+                        justify-content: center;
+                        margin-top: 15px;
+                    }
+                    #donate-info {
+                        top: auto;
+                        bottom: 120%;
+                        left: 50%;
+                        transform: translateX(-50%);
+                    }
+                }
+            </style>
+
             <div id="lobby-message" class="message"></div>
         </div>
 

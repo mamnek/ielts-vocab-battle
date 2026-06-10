@@ -344,6 +344,7 @@ socket.on('new_word', (data) => {
     }
     answerInput.disabled = false;
     btnSubmit.disabled = false;
+    answerInput.value = ''; // Xóa chữ gõ dở từ vòng trước
     answerInput.focus();
     resultMessage.textContent = '';
     resultMessage.className = 'result-message';
