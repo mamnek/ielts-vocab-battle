@@ -86,11 +86,11 @@ def on_create_room(data):
     
     room_vocab = vocab_list
     if vocab_type == 'custom':
-        vocabs = load_custom_vocabs()
-        if custom_set_id in vocabs:
-            room_vocab = vocabs[custom_set_id]
+        custom_vocab_data = data.get('custom_vocab_data', [])
+        if custom_vocab_data and len(custom_vocab_data) > 0:
+            room_vocab = custom_vocab_data
         else:
-            emit('error', {'message': 'Mã bộ từ vựng không tồn tại!'})
+            emit('error', {'message': 'Không tìm thấy bộ từ vựng trên thiết bị này!'})
             return
         total_questions = len(room_vocab)
     else:

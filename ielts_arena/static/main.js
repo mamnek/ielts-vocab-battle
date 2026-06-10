@@ -192,7 +192,7 @@ if (btnParseBulk && bulkVocabInput) {
     });
 }
 
-// Lưu bộ từ vựng lên Server
+// Lưu bộ từ vựng vào LocalStorage của trình duyệt
 btnSaveVocab.addEventListener('click', () => {
     const pairs = [];
     document.querySelectorAll('.vocab-pair').forEach(pair => {
@@ -201,30 +201,70 @@ btnSaveVocab.addEventListener('click', () => {
         if (en && vi) pairs.push({en, vi});
     });
     
-    vocabMessage.textContent = 'Đang lưu...';
-    vocabMessage.style.color = 'var(--text-muted)';
-    socket.emit('save_vocab_set', { pairs: pairs });
+    if (pairs.length < 3) {
+        vocabMessage.textContent = 'Vui lòng điền đầy đủ tiếng Anh và Việt (ít nhất 3 từ)!';
+        vocabMessage.style.color = 'var(--error)';
+        return;
+    }
+    
+    // Tạo ID ngẫu nhiên
+    const setId = Math.random().toString(36).substring(2, 7).toUpperCase();
+    
+    // Lưu vào LocalStorage
+    let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
+    savedVocabs[setId] = pairs;
+    localStorage.setItem('my_custom_vocabs', JSON.stringify(savedVocabs));
+    
+    vocabMessage.textContent = `Thành công! Mã bộ từ vựng: ${setId}`;
+    vocabMessage.style.color = 'var(--success)';
+    
+    // Tự động copy và chuyển về sảnh
+    navigator.clipboard.writeText(setId).catch(() => {});
+    setTimeout(() => {
+        showScreen(lobbyScreen);
+        if (btnShowCreateVocab) btnShowCreateVocab.style.display = 'block';
+        vocabMessage.textContent = '';
+        
+        // Tự điền vào form tạo phòng
+        if (vocabTypeSelect) vocabTypeSelect.value = 'custom';
+        if (customVocabIdInput) {
+            customVocabIdInput.style.display = 'block';
+            customVocabIdInput.value = setId;
+        }
+    }, 2500);
 });
 
 // Bắt sự kiện tạo phòng
 btnCreate.addEventListener('click', () => {
     myName = getPlayerName();
     const vocabType = vocabTypeSelect.value;
-    const customSetId = customVocabIdInput.value.trim();
+    const customSetId = customVocabIdInput.value.trim().toUpperCase();
     const playMode = playModeSelect ? playModeSelect.value : 'multi';
     const qType = document.getElementById('question-type') ? document.getElementById('question-type').value : 'en-vi';
     const qCount = parseInt(randomQuestionCountInput.value) || 10;
     const vTopic = vocabTopicSelect ? vocabTopicSelect.value : 'all';
     
-    if (vocabType === 'custom' && !customSetId) {
-        lobbyMessage.textContent = 'Vui lòng nhập Mã bộ từ vựng!';
-        return;
+    let customVocabData = [];
+    
+    if (vocabType === 'custom') {
+        if (!customSetId) {
+            lobbyMessage.textContent = 'Vui lòng nhập Mã bộ từ vựng!';
+            return;
+        }
+        let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
+        if (savedVocabs[customSetId]) {
+            customVocabData = savedVocabs[customSetId];
+        } else {
+            lobbyMessage.textContent = 'Mã bộ từ vựng không tồn tại trên thiết bị này!';
+            return;
+        }
     }
     
     socket.emit('create_room', { 
         name: myName,
         vocab_type: vocabType,
         custom_set_id: customSetId,
+        custom_vocab_data: customVocabData,
         play_mode: playMode,
         q_type: qType,
         question_count: qCount,
