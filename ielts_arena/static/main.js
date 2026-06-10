@@ -219,7 +219,10 @@ btnSaveVocab.addEventListener('click', () => {
     vocabMessage.style.color = 'var(--success)';
     
     // Tự động copy và chuyển về sảnh
-    navigator.clipboard.writeText(setId).catch(() => {});
+    if (navigator && navigator.clipboard) {
+        navigator.clipboard.writeText(setId).catch(() => {});
+    }
+    
     setTimeout(() => {
         showScreen(lobbyScreen);
         if (btnShowCreateVocab) btnShowCreateVocab.style.display = 'block';
