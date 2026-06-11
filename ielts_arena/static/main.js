@@ -43,6 +43,7 @@ const resultMessage = document.getElementById('result-message');
 let currentRoomCode = '';
 let myName = '';
 let timerInterval;
+let isAdmin = false;
 
 // Khởi tạo 1 session ID cố định cho người dùng này (để reconnect khi load lại tab)
 let mySessionId = localStorage.getItem('ielts_arena_session_id');
@@ -359,10 +360,11 @@ if (btnMic) {
 
 socket.on('sync_data', (data) => {
     myElo = data.elo;
+    isAdmin = data.is_admin || false;
     localStorage.setItem('ielts_arena_elo', myElo);
     if (lobbyRankDisplay) {
         const rank = getRankInfo(myElo);
-        lobbyRankDisplay.textContent = `${rank.name} (${myElo} Elo)`;
+        lobbyRankDisplay.innerHTML = `${rank.name} (${myElo} Elo) ${isAdmin ? '<span style="color:#f472b6; font-size: 0.8rem;">[ADMIN]</span>' : ''}`;
     }
 });
 
@@ -430,6 +432,12 @@ socket.on('vocab_saved', (data) => {
 socket.on('game_start', (data) => {
     showScreen(arenaScreen);
     if(btnShowCreateVocab) btnShowCreateVocab.style.display = 'none';
+    
+    // Show Admin Panel if applicable
+    const adminPanel = document.getElementById('admin-skills-panel');
+    if (adminPanel) {
+        adminPanel.style.display = isAdmin ? 'block' : 'none';
+    }
     
     const players = data.players;
     player1Name.innerHTML = `${players[0].name} <span class="rank-badge">${getRankInfo(players[0].elo).badge}</span>`;
@@ -668,4 +676,85 @@ socket.on('receive_emoji', (data) => {
     setTimeout(() => {
         el.remove();
     }, 2600);
+});
+
+// --- LEADERBOARD & ADMIN SKILLS ---
+
+const btnShowLeaderboard = document.getElementById('btn-show-leaderboard');
+const leaderboardContainer = document.getElementById('leaderboard-container');
+const leaderboardList = document.getElementById('leaderboard-list');
+
+if (btnShowLeaderboard) {
+    btnShowLeaderboard.addEventListener('click', () => {
+        if (leaderboardContainer.style.display === 'none') {
+            socket.emit('request_leaderboard');
+            leaderboardContainer.style.display = 'block';
+            btnShowLeaderboard.textContent = 'Ẩn Bảng Xếp Hạng';
+        } else {
+            leaderboardContainer.style.display = 'none';
+            btnShowLeaderboard.textContent = 'Xem Cao Thủ';
+        }
+    });
+}
+
+socket.on('leaderboard_data', (data) => {
+    if (!leaderboardList) return;
+    leaderboardList.innerHTML = '';
+    data.forEach((u, index) => {
+        const rank = getRankInfo(u.elo);
+        const li = document.createElement('li');
+        li.style.padding = '10px 0';
+        li.style.borderBottom = '1px solid #334155';
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        
+        let medal = '';
+        if (index === 0) medal = '🏆';
+        else if (index === 1) medal = '🥈';
+        else if (index === 2) medal = '🥉';
+        
+        li.innerHTML = `<span><strong style="color: #fbbf24;">#${index + 1}</strong> ${medal} <strong>${u.name}</strong></span> <span style="color: #fbbf24;">${u.elo} ${rank.badge}</span>`;
+        leaderboardList.appendChild(li);
+    });
+});
+
+document.querySelectorAll('.btn-admin-skill').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (!isAdmin) return;
+        const skill = btn.dataset.skill;
+        socket.emit('admin_skill', {room_code: currentRoomCode, skill: skill, session_id: mySessionId});
+        
+        // Hiệu ứng click
+        btn.style.transform = 'scale(0.9)';
+        setTimeout(() => btn.style.transform = 'scale(1)', 150);
+        
+        // Báo cho Admin biết đã tung chiêu
+        if (skill === 'freeze') {
+            resultMessage.textContent = '❄️ Đã tung chiêu Đóng Băng phòng!';
+            resultMessage.className = 'result-message success';
+        }
+    });
+});
+
+socket.on('skill_freeze', (data) => {
+    if (data.sender_id !== mySessionId && !isAdmin) {
+        answerInput.disabled = true;
+        answerInput.value = '';
+        answerInput.placeholder = '🥶 Bạn đã bị Admin ĐÓNG BĂNG!';
+        answerInput.style.background = '#e0f2fe';
+        if (btnSubmit) btnSubmit.disabled = true;
+        
+        setTimeout(() => {
+            answerInput.disabled = false;
+            answerInput.placeholder = 'Nhập đáp án...';
+            answerInput.style.background = ''; // Xóa style để nó trở về màu mặc định của nền tối
+            if (btnSubmit) btnSubmit.disabled = false;
+            answerInput.focus();
+        }, 3000);
+    }
+});
+
+socket.on('skill_auto_correct', (data) => {
+    answerInput.value = data.answer;
+    submitAnswer();
 });

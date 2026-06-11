@@ -51,7 +51,12 @@
                 </tr>
                 {% for u in users %}
                 <tr>
-                    <td><strong>{{ u.name }}</strong></td>
+                    <td>
+                        {% if u.is_admin %}
+                        <span style="color: #f472b6; font-weight: bold;">[ADMIN]</span>
+                        {% endif %}
+                        <strong>{{ u.name }}</strong>
+                    </td>
                     <td>
                         <form action="/admin/action" method="post" style="display: inline-flex; gap: 5px;">
                             <input type="hidden" name="action" value="set_elo">
@@ -68,7 +73,17 @@
                         {% endif %}
                     </td>
                     <td>
-                        <form action="/admin/action" method="post" style="display: inline;">
+                        <form action="/admin/action" method="post" style="display: inline; margin-right: 5px;">
+                            <input type="hidden" name="user_id" value="{{ u._id }}">
+                            {% if u.is_admin %}
+                            <input type="hidden" name="action" value="remove_admin">
+                            <button type="submit" class="btn" style="background: #a855f7;">Hủy Admin</button>
+                            {% else %}
+                            <input type="hidden" name="action" value="make_admin">
+                            <button type="submit" class="btn" style="background: #a855f7;">Cấp Admin</button>
+                            {% endif %}
+                        </form>
+                        <form action="/admin/action" method="post" style="display: inline; margin-right: 5px;">
                             <input type="hidden" name="user_id" value="{{ u._id }}">
                             {% if u.banned %}
                             <input type="hidden" name="action" value="unban">
@@ -77,6 +92,11 @@
                             <input type="hidden" name="action" value="ban">
                             <button type="submit" class="btn btn-danger">Cấm Chơi</button>
                             {% endif %}
+                        </form>
+                        <form action="/admin/action" method="post" style="display: inline;" onsubmit="return confirm('Bạn có chắc chắn muốn xóa tài khoản này vĩnh viễn?');">
+                            <input type="hidden" name="user_id" value="{{ u._id }}">
+                            <input type="hidden" name="action" value="delete">
+                            <button type="submit" class="btn btn-danger" style="background: #ef4444;">Xóa</button>
                         </form>
                     </td>
                 </tr>

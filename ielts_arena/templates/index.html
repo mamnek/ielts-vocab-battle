@@ -68,6 +68,15 @@
                 </div>
             </div>
             
+            <!-- Bảng Xếp Hạng -->
+            <div style="margin-top: 20px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; padding: 15px;">
+                <h3 style="color: #fbbf24; text-align: center; margin-bottom: 10px;">🏆 Bảng Xếp Hạng Top 10</h3>
+                <button id="btn-show-leaderboard" class="btn" style="width: 100%; background: #3b82f6;">Xem Cao Thủ</button>
+                <div id="leaderboard-container" style="display: none; margin-top: 15px;">
+                    <ul id="leaderboard-list" style="list-style: none; padding: 0;"></ul>
+                </div>
+            </div>
+            
             <div class="brand-donate">
                 <span style="color: rgba(255, 255, 255, 0.5); font-weight: bold; font-size: 1.1rem; letter-spacing: 1px; font-family: 'Courier New', Courier, monospace;">by mam</span>
                 <div class="donate-container" style="position: relative;">
@@ -216,6 +225,16 @@
                 <button class="emoji-btn" data-emoji="😭">😭</button>
                 <button class="emoji-btn" data-emoji="👍">👍</button>
                 <button class="emoji-btn" data-emoji="❤️">❤️</button>
+            </div>
+            
+            <!-- Admin Skills Panel -->
+            <div id="admin-skills-panel" style="display: none; margin-top: 20px; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px dashed #f472b6; text-align: center;">
+                <h4 style="color: #f472b6; margin-bottom: 15px;">⚡ Quyền Năng Admin ⚡</h4>
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-admin-skill" data-skill="freeze" style="background: #0ea5e9; padding: 5px 15px; font-size: 0.9rem;">❄️ Đóng Băng</button>
+                    <button class="btn btn-admin-skill" data-skill="auto_correct" style="background: #10b981; padding: 5px 15px; font-size: 0.9rem;">🎯 Tự Trả Lời Đúng</button>
+                </div>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px;">(Bạn là Admin nên mới thấy bảng này)</p>
             </div>
         </div>
     </div>
