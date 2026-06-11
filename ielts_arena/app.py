@@ -154,34 +154,36 @@ def on_create_room(data):
     except:
         question_count = 10
     
-    room_vocab = vocab_list
+    session_id = data.get('session_id', request.sid)
+    elo = int(data.get('elo', 0))
+    
     if vocab_type == 'custom':
         custom_vocab_data = data.get('custom_vocab_data', [])
-        if custom_vocab_data and len(custom_vocab_data) > 0:
-            room_vocab = custom_vocab_data
-        else:
-            emit('error', {'message': 'Không tìm thấy bộ từ vựng trên thiết bị này!'})
+        if not custom_vocab_data:
+            emit('error', {'message': 'Không tìm thấy dữ liệu bộ từ vựng!'})
             return
-        total_questions = len(room_vocab)
+        room_vocab = custom_vocab_data
+        total_questions = min(question_count, len(room_vocab))
+    elif vocab_type == 'mistakes':
+        if users_collection is not None:
+            db_user = users_collection.find_one({'_id': session_id})
+            if not db_user or not db_user.get('mistakes'):
+                emit('error', {'message': 'Tuyệt vời! Bạn không có từ vựng nào sai cả. Hãy chơi thêm để thử thách nhé.'})
+                return
+            room_vocab = list(db_user['mistakes'].values())
+            total_questions = min(question_count, len(room_vocab))
+        else:
+            emit('error', {'message': 'Database chưa kết nối!'})
+            return
     else:
         # Lọc danh sách mặc định theo topic
-        filtered_vocab = []
-        for w in room_vocab:
-            match_topic = (vocab_topic == 'all') or (w.get('topic') == vocab_topic)
-            if match_topic:
-                filtered_vocab.append(w)
-                
-        if not filtered_vocab:
+        room_vocab = [w for w in vocab_list if vocab_topic == 'all' or w.get('topic') == vocab_topic]
+        if not room_vocab:
             emit('error', {'message': 'Không có từ vựng nào thuộc Chủ đề này!'})
             return
-            
-        room_vocab = filtered_vocab
         total_questions = question_count
             
     room_code = generate_room_code()
-    
-    session_id = data.get('session_id', request.sid)
-    elo = int(data.get('elo', 0))
     
     # Kiểm tra DB
     if users_collection is not None:
@@ -336,6 +338,25 @@ def next_word(room_code):
     room = rooms[room_code]
     
     with room['lock']:
+        # ---- LOG MISTAKES & SAVE HISTORY ----
+        if room.get('current_word'):
+            cw = room['current_word']
+            room.setdefault('used_words_full', []).append(cw)
+            en_key = cw['en'].replace('.', '')
+            winner_sid = room.get('winner_sid')
+            
+            if users_collection is not None:
+                for sid, p in room['players'].items():
+                    if sid != winner_sid:
+                        users_collection.update_one(
+                            {'_id': p['user_id']},
+                            {'$set': {f'mistakes.{en_key}': {'en': cw['en'], 'vi': cw['vi'], 'errors': 2}}},
+                            upsert=True
+                        )
+                        
+        # Reset winner_sid for next round
+        room['winner_sid'] = None
+        
         room['current_question'] += 1
         
         # Nếu đã chơi hết số câu thì kết thúc game
@@ -363,7 +384,7 @@ def next_word(room_code):
                     new_elo = max(0, p.get('elo', 0) + p.get('elo_change', 0))
                     users_collection.update_one({'_id': p['user_id']}, {'$set': {'elo': new_elo}})
 
-            socketio.emit('game_over', {'players': players_data}, room=room_code)
+            socketio.emit('game_over', {'players': players_data, 'history': room.get('used_words_full', [])}, room=room_code)
             
             def remove_room():
                 if room_code in rooms:
@@ -478,8 +499,11 @@ def on_submit_answer(data):
         if room['answered'] or room['current_word'] is None:
             return 
             
-        correct_answer = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
-        correct_answer = correct_answer.strip().lower()
+        correct_en = room['current_word']['en'].strip().lower()
+        correct_vi = room['current_word']['vi'].strip().lower()
+        current_qt = room.get('current_q_type', 'en-vi')
+        
+        correct_answer = correct_en if current_qt == 'vi-en' else correct_vi
         
         if room.get('mode') in ['sync', 'sync3']:
             room['sync_answers'][session_id] = answer
@@ -491,6 +515,21 @@ def on_submit_answer(data):
         else:
             if check_answer(answer, correct_answer):
                 room['answered'] = True
+                room['winner_sid'] = session_id # Đánh dấu người chiến thắng
+            
+                # Xóa hoặc giảm án tích nếu trả lời đúng
+                if users_collection is not None:
+                    user_db = users_collection.find_one({'_id': session_id})
+                    if user_db and 'mistakes' in user_db:
+                        en_key = correct_en.replace('.', '')
+                        if en_key in user_db['mistakes']:
+                            current_errors = user_db['mistakes'][en_key].get('errors', 2)
+                            if current_errors <= 1:
+                                users_collection.update_one({'_id': session_id}, {'$unset': {f'mistakes.{en_key}': ""}})
+                            else:
+                                users_collection.update_one({'_id': session_id}, {'$inc': {f'mistakes.{en_key}.errors': -1}})
+            
+                # Tăng điểm
                 room['players'][session_id]['score'] += 10
                 
                 players_data = list(room['players'].values())
@@ -570,6 +609,42 @@ def handle_leaderboard():
         top_users = list(users_collection.find({'banned': {'$ne': True}}).sort('elo', -1).limit(10))
         data = [{'name': u.get('name', 'Guest'), 'elo': u.get('elo', 0)} for u in top_users]
         emit('leaderboard_data', data)
+
+@socketio.on('request_user_stats')
+def handle_user_stats(data):
+    session_id = data.get('session_id')
+    if users_collection is not None:
+        user = users_collection.find_one({'_id': session_id})
+        if user:
+            mistakes = user.get('mistakes', {})
+            emit('user_stats', {'mistakes_count': len(mistakes)})
+
+@socketio.on('check_speaking')
+def handle_check_speaking(data):
+    import re
+    import difflib
+    
+    expected = data.get('expected', '')
+    actual = data.get('actual', '')
+    
+    # Làm sạch văn bản: Bỏ dấu câu, chuyển chữ thường
+    exp_clean = re.sub(r'[^\w\s]', '', expected).lower().split()
+    act_clean = re.sub(r'[^\w\s]', '', actual).lower().split()
+    
+    matcher = difflib.SequenceMatcher(None, exp_clean, act_clean)
+    score = int(matcher.ratio() * 100)
+    
+    feedback = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'equal':
+            for word in exp_clean[i1:i2]:
+                feedback.append({'word': word, 'status': 'correct'})
+        elif tag in ('replace', 'delete'):
+            for word in exp_clean[i1:i2]:
+                feedback.append({'word': word, 'status': 'wrong'})
+        # Bỏ qua 'insert' vì đó là từ thừa người dùng đọc, không map với văn bản gốc
+    
+    emit('speaking_result', {'score': score, 'feedback': feedback})
 
 @socketio.on('admin_skill')
 def handle_admin_skill(data):

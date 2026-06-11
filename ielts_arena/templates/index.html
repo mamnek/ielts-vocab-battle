@@ -61,6 +61,12 @@
                 <input type="text" id="room-code-input" placeholder="Nhập mã phòng (VD: A1B2C3)" autocomplete="off">
                 <button id="btn-join" class="btn secondary">Tham gia phòng</button>
                 
+                <!-- Sổ Tay Điểm Yếu -->
+                <div style="margin-top: 15px;">
+                    <button id="btn-revenge" class="btn" style="width: 100%; background: #ef4444; display: none; padding: 10px; font-weight: bold;">📓 Ôn tập Từ Hay Sai (<span id="mistake-count">0</span> từ)</button>
+                    <button id="btn-show-speaking" class="btn" style="width: 100%; background: #10b981; margin-top: 10px; padding: 10px; font-weight: bold;">🎙️ Kiểm Tra Speaking</button>
+                </div>
+                
                 <!-- Hiển thị Rank -->
                 <div style="margin-top: 20px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; display: flex; align-items: center; justify-content: center; gap: 10px;">
                     <span style="color: var(--text-muted); font-size: 0.9rem;">Hạng của bạn:</span>
@@ -179,6 +185,46 @@
                 <h2 id="winner-name" style="color: var(--success); font-size: 2rem; margin-bottom: 10px;">Player 1 Thắng!</h2>
                 <div id="final-scores" style="font-size: 1.2rem; color: white; margin-bottom: 20px;"></div>
                 <button id="btn-play-again" class="btn primary">Chơi ván mới</button>
+                <button id="btn-show-review" class="btn secondary" style="margin-top: 10px; width: 100%;">Xem Báo Cáo Từ Vựng</button>
+            </div>
+        </div>
+        
+        <!-- Màn hình 1.5: Báo cáo Cuối Ván -->
+        <div id="review-screen" class="screen">
+            <h1 style="color: #f472b6;">Báo Cáo Cuối Ván</h1>
+            <div class="card" style="max-height: 80vh; overflow-y: auto;">
+                <p style="margin-bottom: 15px; color: var(--text-muted);">Tổng kết các từ vựng đã xuất hiện trong ván đấu vừa rồi:</p>
+                <ul id="review-list" style="list-style: none; padding: 0; text-align: left;">
+                    <!-- Danh sách từ vựng sẽ được chèn vào đây bằng JS -->
+                </ul>
+                <button id="btn-back-to-lobby" class="btn primary" style="margin-top: 20px; width: 100%;">Về Sảnh Chờ</button>
+            </div>
+        </div>
+        
+        <!-- Màn hình 1.6: Kiểm tra Speaking -->
+        <div id="speaking-screen" class="screen">
+            <div class="header" style="justify-content: flex-start; gap: 15px;">
+                <button id="btn-back-from-speaking" class="btn secondary" style="padding: 5px 15px;">⬅ Quay lại</button>
+                <h2 style="color: #10b981; margin: 0;">Kiểm Tra Speaking</h2>
+            </div>
+            
+            <div class="card" style="margin-top: 20px;">
+                <p style="color: var(--text-muted); margin-bottom: 10px;">Nhập câu Tiếng Anh bạn muốn kiểm tra:</p>
+                <textarea id="speaking-target" rows="3" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 1.1rem; resize: vertical; outline: none;" placeholder="VD: In my opinion, environmental protection is everyone's responsibility."></textarea>
+                
+                <div style="margin-top: 20px; text-align: center;">
+                    <button id="btn-start-speaking" class="btn" style="background: #3b82f6; width: 70px; height: 70px; border-radius: 50%; font-size: 2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);">🎤</button>
+                    <p id="speaking-status" style="margin-top: 10px; color: #94a3b8; font-weight: bold;">Nhấn Micro để đọc</p>
+                </div>
+                
+                <div id="speaking-result-container" style="display: none; margin-top: 20px; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px dashed #334155;">
+                    <h3 style="text-align: center; margin-bottom: 10px; color: #cbd5e1;">Kết Quả Phát Âm</h3>
+                    <div style="font-size: 3.5rem; font-weight: bold; text-align: center; color: #fbbf24; text-shadow: 0 2px 10px rgba(251, 191, 36, 0.2);" id="speaking-score">0/100</div>
+                    <div style="background: #0f172a; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                        <p style="font-size: 1.2rem; line-height: 1.6; margin: 0;" id="speaking-feedback"></p>
+                    </div>
+                    <p style="margin-top: 10px; font-size: 0.85rem; color: #64748b; text-align: center;">(Màu xanh: Chuẩn, <span style="color: #ef4444; text-decoration: underline;">Màu đỏ: Sai hoặc bị bỏ qua</span>)</p>
+                </div>
             </div>
         </div>
 

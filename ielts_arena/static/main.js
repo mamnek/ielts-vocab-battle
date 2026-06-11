@@ -5,6 +5,9 @@ const lobbyScreen = document.getElementById('lobby-screen');
 const waitingScreen = document.getElementById('waiting-screen');
 const arenaScreen = document.getElementById('arena-screen');
 const createVocabScreen = document.getElementById('create-vocab-screen');
+const summaryScreen = document.getElementById('summary-screen');
+const reviewScreen = document.getElementById('review-screen');
+const speakingScreen = document.getElementById('speaking-screen');
 
 // Các phần tử DOM
 const playerNameInput = document.getElementById('player-name');
@@ -369,6 +372,9 @@ socket.on('sync_data', (data) => {
 });
 
 socket.on('connect', () => {
+    // Xin thông tin user (để lấy danh sách từ sai)
+    socket.emit('request_user_stats', { session_id: mySessionId });
+    
     // Nếu mất kết nối và có lại, tự động báo cho server khôi phục session
     if (currentRoomCode) {
         socket.emit('reconnect_session', { room_code: currentRoomCode, session_id: mySessionId });
@@ -399,6 +405,35 @@ socket.on('waiting_update', (data) => {
         waitingMessage.innerHTML = `Đang chờ người chơi khác tham gia... <br><br> <span style="font-size: 1.2rem; color: var(--primary); font-weight: bold;">(${data.current}/${data.max} người)</span>`;
     }
 });
+
+// Sổ tay từ vựng sai
+socket.on('user_stats', (data) => {
+    const btnRevenge = document.getElementById('btn-revenge');
+    const mistakeCount = document.getElementById('mistake-count');
+    if (btnRevenge && mistakeCount) {
+        if (data.mistakes_count > 0) {
+            btnRevenge.style.display = 'block';
+            mistakeCount.textContent = data.mistakes_count;
+        } else {
+            btnRevenge.style.display = 'none';
+        }
+    }
+});
+
+const btnRevenge = document.getElementById('btn-revenge');
+if (btnRevenge) {
+    btnRevenge.addEventListener('click', () => {
+        myName = getPlayerName();
+        socket.emit('create_room', { 
+            name: myName,
+            vocab_type: 'mistakes',
+            play_mode: 'single', // Chơi 1 mình ôn bài
+            q_count: 10,
+            session_id: mySessionId,
+            elo: myElo
+        });
+    });
+}
 
 socket.on('error', (data) => { lobbyMessage.textContent = data.message; });
 
@@ -583,7 +618,6 @@ socket.on('player_disconnected', () => {
 });
 
 // Kết thúc game
-const summaryScreen = document.getElementById('summary-screen');
 const winnerNameEl = document.getElementById('winner-name');
 const finalScoresEl = document.getElementById('final-scores');
 const btnPlayAgain = document.getElementById('btn-play-again');
@@ -627,7 +661,85 @@ socket.on('game_over', (data) => {
         });
         finalScoresEl.innerHTML = scoresHtml;
     }
+    
+    // --- BÁO CÁO TỪ VỰNG ---
+    const reviewList = document.getElementById('review-list');
+    if (reviewList && data.history) {
+        reviewList.innerHTML = '';
+        data.history.forEach((w, index) => {
+            const li = document.createElement('li');
+            li.style.background = '#0f172a';
+            li.style.padding = '12px 15px';
+            li.style.borderRadius = '8px';
+            li.style.marginBottom = '10px';
+            li.style.borderLeft = '4px solid #f472b6';
+            
+            const dictId = 'dict-' + Math.random().toString(36).substr(2, 9);
+            const safeEn = w.en.replace(new RegExp("'", 'g'), "\\'");
+            
+            li.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="color: #fbbf24; font-size: 1.1rem;">${index + 1}. ${w.en}</strong> 
+                        <span style="color: #cbd5e1; font-size: 1.05rem;"> - ${w.vi}</span>
+                    </div>
+                    <button class="btn" onclick="playAudio('${safeEn}')" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">🔊</button>
+                </div>
+                <div id="${dictId}" style="margin-top: 8px; font-size: 0.95rem; color: #94a3b8; display: none; line-height: 1.4;"></div>
+            `;
+            reviewList.appendChild(li);
+            
+            // Gọi API Từ điển miễn phí để lấy phiên âm và ví dụ
+            fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${w.en}`)
+                .then(res => res.json())
+                .then(dictData => {
+                    if(Array.isArray(dictData) && dictData[0]) {
+                        // Tìm phiên âm
+                        let ipa = dictData[0].phonetic || '';
+                        if(!ipa && dictData[0].phonetics) {
+                            const p = dictData[0].phonetics.find(x => x.text);
+                            if(p) ipa = p.text;
+                        }
+                        
+                        // Tìm câu ví dụ đầu tiên
+                        let example = '';
+                        if(dictData[0].meanings) {
+                            for(let m of dictData[0].meanings) {
+                                if(m.definitions) {
+                                    const def = m.definitions.find(d => d.example);
+                                    if(def) { example = def.example; break; }
+                                }
+                            }
+                        }
+                        
+                        const dictEl = document.getElementById(dictId);
+                        if(dictEl && (ipa || example)) {
+                            dictEl.style.display = 'block';
+                            let html = '';
+                            if(ipa) html += `<span style="color: #38bdf8; font-family: monospace;">Phiên âm: ${ipa}</span><br>`;
+                            if(example) html += `<span style="color: #a7f3d0; font-style: italic;">Ví dụ: "${example}"</span>`;
+                            dictEl.innerHTML = html;
+                        }
+                    }
+                }).catch(e => console.log('Dictionary fetch error for', w.en));
+        });
+    }
 });
+
+const btnShowReview = document.getElementById('btn-show-review');
+const btnBackToLobby = document.getElementById('btn-back-to-lobby');
+
+if (btnShowReview && reviewScreen) {
+    btnShowReview.addEventListener('click', () => {
+        showScreen(reviewScreen);
+    });
+}
+
+if (btnBackToLobby) {
+    btnBackToLobby.addEventListener('click', () => {
+        window.location.reload();
+    });
+}
 
 if (btnPlayAgain) {
     btnPlayAgain.addEventListener('click', () => {
@@ -757,4 +869,114 @@ socket.on('skill_freeze', (data) => {
 socket.on('skill_auto_correct', (data) => {
     answerInput.value = data.answer;
     submitAnswer();
+});
+
+// --- KIỂM TRA SPEAKING (PRONUNCIATION TEST) ---
+const btnShowSpeaking = document.getElementById('btn-show-speaking');
+const btnBackFromSpeaking = document.getElementById('btn-back-from-speaking');
+const btnStartSpeaking = document.getElementById('btn-start-speaking');
+const speakingTarget = document.getElementById('speaking-target');
+const speakingStatus = document.getElementById('speaking-status');
+const speakingResultContainer = document.getElementById('speaking-result-container');
+const speakingScore = document.getElementById('speaking-score');
+const speakingFeedback = document.getElementById('speaking-feedback');
+
+let speakingRecognition = null;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecog = window.SpeechRecognition || window.webkitSpeechRecognition;
+    speakingRecognition = new SpeechRecog();
+    speakingRecognition.lang = 'en-US';
+    speakingRecognition.continuous = false;
+    speakingRecognition.interimResults = false;
+    
+    speakingRecognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        speakingStatus.textContent = 'Đang phân tích độ chuẩn xác...';
+        socket.emit('check_speaking', { expected: speakingTarget.value, actual: transcript });
+        
+        // Ép tắt Micro ngay lập tức (giải quyết lỗi treo Micro trên điện thoại)
+        try { speakingRecognition.stop(); } catch(e) {}
+        
+        // Trả lại giao diện nút mic
+        btnStartSpeaking.style.background = '#3b82f6';
+        btnStartSpeaking.style.transform = 'scale(1)';
+        btnStartSpeaking.style.boxShadow = '0 4px 15px rgba(59, 130, 246, 0.4)';
+    };
+    
+    speakingRecognition.onerror = (event) => { 
+        let errorMsg = 'Không nghe rõ, thử lại nhé!';
+        if (event.error === 'not-allowed') errorMsg = 'Chưa cấp quyền Micro!';
+        else if (event.error === 'network') errorMsg = 'Lỗi mạng (Apple server)!';
+        else if (event.error === 'no-speech') errorMsg = 'Chưa nghe thấy tiếng!';
+        else if (event.error) errorMsg = 'Lỗi: ' + event.error;
+        
+        speakingStatus.textContent = errorMsg; 
+        btnStartSpeaking.style.background = '#3b82f6'; 
+        btnStartSpeaking.style.transform = 'scale(1)';
+        try { speakingRecognition.stop(); } catch(e) {}
+    };
+    speakingRecognition.onend = () => { 
+        btnStartSpeaking.style.background = '#3b82f6'; 
+        btnStartSpeaking.style.transform = 'scale(1)';
+    };
+}
+
+if (btnShowSpeaking) {
+    btnShowSpeaking.addEventListener('click', () => {
+        showScreen(speakingScreen);
+        speakingTarget.value = '';
+        speakingResultContainer.style.display = 'none';
+        speakingStatus.textContent = 'Nhấn Micro để đọc';
+    });
+}
+
+if (btnBackFromSpeaking) {
+    btnBackFromSpeaking.addEventListener('click', () => {
+        showScreen(lobbyScreen);
+    });
+}
+
+if (btnStartSpeaking) {
+    btnStartSpeaking.addEventListener('click', () => {
+        if (!speakingTarget.value.trim()) {
+            alert('Vui lòng nhập câu Tiếng Anh bạn cần kiểm tra vào ô trên nhé!');
+            return;
+        }
+        if (speakingRecognition) {
+            btnStartSpeaking.style.background = '#ef4444'; // Đỏ báo đang thu
+            btnStartSpeaking.style.transform = 'scale(1.1)';
+            btnStartSpeaking.style.boxShadow = '0 0 20px rgba(239, 68, 68, 0.8)';
+            speakingStatus.textContent = 'Đang nghe...';
+            speakingRecognition.start();
+        } else {
+            alert('Trình duyệt của bạn không hỗ trợ Micro (Nên dùng Chrome/Edge/Safari).');
+        }
+    });
+}
+
+socket.on('speaking_result', (data) => {
+    speakingStatus.textContent = 'Phân tích hoàn tất!';
+    speakingResultContainer.style.display = 'block';
+    
+    let color = '#ef4444'; // Red
+    if (data.score >= 80) color = '#10b981'; // Green
+    else if (data.score >= 50) color = '#fbbf24'; // Yellow
+    
+    speakingScore.textContent = `${data.score}/100`;
+    speakingScore.style.color = color;
+    speakingScore.style.textShadow = `0 2px 15px ${color}40`;
+    
+    speakingFeedback.innerHTML = '';
+    data.feedback.forEach(item => {
+        const span = document.createElement('span');
+        span.textContent = item.word + ' ';
+        if (item.status === 'correct') {
+            span.style.color = '#10b981';
+            span.style.fontWeight = 'bold';
+        } else {
+            span.style.color = '#ef4444';
+            span.style.textDecoration = 'underline';
+        }
+        speakingFeedback.appendChild(span);
+    });
 });
