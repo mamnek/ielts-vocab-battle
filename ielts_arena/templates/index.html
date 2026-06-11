@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <div id="emoji-layer"></div>
     <button id="btn-show-create-vocab" class="btn secondary" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 15px; font-size: 0.9rem; z-index: 10;">+ Tạo bộ từ vựng</button>
 
     <div id="app">
@@ -22,6 +23,8 @@
                         <option value="single">Chơi Đơn (Tự luyện tập)</option>
                         <option value="multi" selected>Chơi Đôi (Nhanh tay nhanh trí)</option>
                         <option value="sync">Chơi Đôi (Đồng Bộ So Tài)</option>
+                        <option value="multi3">Chơi 3 Người (Nhanh tay)</option>
+                        <option value="sync3">Chơi 3 Người (Đồng Bộ)</option>
                     </select>
 
                     <label style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 5px; display: block;">Loại câu hỏi:</label>
@@ -57,6 +60,12 @@
                 <div class="divider">HOẶC</div>
                 <input type="text" id="room-code-input" placeholder="Nhập mã phòng (VD: A1B2C3)" autocomplete="off">
                 <button id="btn-join" class="btn secondary">Tham gia phòng</button>
+                
+                <!-- Hiển thị Rank -->
+                <div style="margin-top: 20px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Hạng của bạn:</span>
+                    <span id="lobby-rank-display" style="font-weight: bold; font-size: 1.1rem; color: #fbbf24;">Trứng Nước 🌱 (0 Elo)</span>
+                </div>
             </div>
             
             <div class="brand-donate">
@@ -113,7 +122,7 @@
             <div class="card">
                 <p>Mã phòng của bạn là:</p>
                 <h2 id="display-room-code" class="room-code"></h2>
-                <p>Đang chờ đối thủ tham gia...</p>
+                <p id="waiting-message">Đang chờ người chơi khác tham gia...</p>
                 <div class="loader"></div>
             </div>
         </div>
@@ -166,18 +175,24 @@
 
         <!-- Màn hình 2: Sàn đấu -->
         <div id="arena-screen" class="screen">
-            <div class="header">
-                <div class="player-score" id="player1-score">
-                    <span class="name">Player 1</span>
-                    <span class="score">0</span>
+            <div class="header" style="flex-direction: column; gap: 15px;">
+                <div style="display: flex; justify-content: space-around; width: 100%;" id="players-container">
+                    <div class="player-score" id="player1-score">
+                        <span class="name">Player 1</span>
+                        <span class="score">0</span>
+                    </div>
+                    <div class="player-score" id="player2-score" style="display: none;">
+                        <span class="name">Player 2</span>
+                        <span class="score">0</span>
+                    </div>
+                    <div class="player-score" id="player3-score" style="display: none;">
+                        <span class="name">Player 3</span>
+                        <span class="score">0</span>
+                    </div>
                 </div>
-                <div class="timer">
+                <div class="timer" style="margin-bottom: 0;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: -5px; text-align: center;">Câu <span id="current-q-display">1</span>/<span id="total-q-display">10</span></div>
                     <span id="countdown">15</span>s
-                </div>
-                <div class="player-score" id="player2-score">
-                    <span class="score">0</span>
-                    <span class="name">Player 2</span>
                 </div>
             </div>
             
@@ -191,7 +206,16 @@
             
             <div class="input-area">
                 <input type="text" id="answer-input" placeholder="Nhập nghĩa tiếng Việt (VD: giải pháp)" autocomplete="off">
+                <button id="btn-mic" class="btn" title="Đọc tiếng Anh (Speech to Text)" style="display: none; background: #6366f1; width: 60px; font-size: 1.2rem; padding: 0; color: white;"><span id="mic-icon">🎤</span></button>
                 <button id="btn-submit" class="btn primary">Gửi</button>
+            </div>
+            
+            <div class="emoji-bar">
+                <button class="emoji-btn" data-emoji="🔥">🔥</button>
+                <button class="emoji-btn" data-emoji="🤣">🤣</button>
+                <button class="emoji-btn" data-emoji="😭">😭</button>
+                <button class="emoji-btn" data-emoji="👍">👍</button>
+                <button class="emoji-btn" data-emoji="❤️">❤️</button>
             </div>
         </div>
     </div>

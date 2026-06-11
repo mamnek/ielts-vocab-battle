@@ -31,6 +31,8 @@ const player1Name = document.querySelector('#player1-score .name');
 const player1Score = document.querySelector('#player1-score .score');
 const player2Name = document.querySelector('#player2-score .name');
 const player2Score = document.querySelector('#player2-score .score');
+const player3Name = document.querySelector('#player3-score .name');
+const player3Score = document.querySelector('#player3-score .score');
 const countdownEl = document.getElementById('countdown');
 const englishWordEl = document.getElementById('english-word');
 const btnSpeak = document.getElementById('btn-speak');
@@ -47,6 +49,23 @@ let mySessionId = localStorage.getItem('ielts_arena_session_id');
 if (!mySessionId) {
     mySessionId = Math.random().toString(36).substring(2, 15);
     localStorage.setItem('ielts_arena_session_id', mySessionId);
+}
+
+// Hàm lấy thông tin Rank dựa trên Elo
+function getRankInfo(elo) {
+    if (elo < 200) return { name: 'Trứng Nước 🌱', badge: '🌱' };
+    if (elo < 500) return { name: 'Tân Binh 🥉', badge: '🥉' };
+    if (elo < 1000) return { name: 'Trung Cấp 🥈', badge: '🥈' };
+    if (elo < 1500) return { name: 'Cao Thủ 🥇', badge: '🥇' };
+    return { name: 'IELTS Master 💎', badge: '💎' };
+}
+
+// Khởi tạo Elo
+let myElo = parseInt(localStorage.getItem('ielts_arena_elo')) || 0;
+const lobbyRankDisplay = document.getElementById('lobby-rank-display');
+if (lobbyRankDisplay) {
+    const rank = getRankInfo(myElo);
+    lobbyRankDisplay.textContent = `${rank.name} (${myElo} Elo)`;
 }
 
 // Hàm phát âm từ vựng
@@ -272,7 +291,8 @@ btnCreate.addEventListener('click', () => {
         q_type: qType,
         question_count: qCount,
         vocab_topic: vTopic,
-        session_id: mySessionId
+        session_id: mySessionId,
+        elo: myElo
     });
 });
 
@@ -281,7 +301,7 @@ btnJoin.addEventListener('click', () => {
     const code = roomCodeInput.value.trim();
     if (!code) return lobbyMessage.textContent = 'Vui lòng nhập mã phòng!';
     myName = getPlayerName();
-    socket.emit('join_room', { name: myName, room_code: code, session_id: mySessionId });
+    socket.emit('join_room', { name: myName, room_code: code, session_id: mySessionId, elo: myElo });
 });
 
 // Gửi đáp án (Hỗ trợ nút Submit và phím Enter)
@@ -293,6 +313,38 @@ function submitAnswer() {
 }
 btnSubmit.addEventListener('click', submitAnswer);
 answerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAnswer(); });
+
+// Nhận diện giọng nói (Speech-to-Text)
+const btnMic = document.getElementById('btn-mic');
+let recognition = null;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.lang = 'en-US'; // Nhận diện tiếng Anh
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        answerInput.value = transcript;
+        submitAnswer(); // Tự động gửi bài luôn
+        if (btnMic) btnMic.classList.remove('mic-active');
+    };
+    
+    recognition.onerror = () => { if (btnMic) btnMic.classList.remove('mic-active'); };
+    recognition.onend = () => { if (btnMic) btnMic.classList.remove('mic-active'); };
+}
+
+if (btnMic) {
+    btnMic.addEventListener('click', () => {
+        if (recognition) {
+            btnMic.classList.add('mic-active');
+            recognition.start();
+        } else {
+            alert('Trình duyệt của bạn không hỗ trợ nhận diện giọng nói. Vui lòng dùng Chrome!');
+        }
+    });
+}
 
 
 // --- LẮNG NGHE SỰ KIỆN TỪ SERVER ---
@@ -315,7 +367,19 @@ socket.on('room_created', (data) => {
     if(btnShowCreateVocab) btnShowCreateVocab.style.display = 'none';
 });
 
-socket.on('room_joined', (data) => { currentRoomCode = data.room_code; });
+socket.on('room_joined', (data) => { 
+    currentRoomCode = data.room_code; 
+    displayRoomCode.textContent = currentRoomCode;
+    showScreen(waitingScreen);
+    if(btnShowCreateVocab) btnShowCreateVocab.style.display = 'none';
+});
+
+socket.on('waiting_update', (data) => {
+    const waitingMessage = document.getElementById('waiting-message');
+    if (waitingMessage) {
+        waitingMessage.innerHTML = `Đang chờ người chơi khác tham gia... <br><br> <span style="font-size: 1.2rem; color: var(--primary); font-weight: bold;">(${data.current}/${data.max} người)</span>`;
+    }
+});
 
 socket.on('error', (data) => { lobbyMessage.textContent = data.message; });
 
@@ -351,15 +415,23 @@ socket.on('game_start', (data) => {
     if(btnShowCreateVocab) btnShowCreateVocab.style.display = 'none';
     
     const players = data.players;
-    player1Name.textContent = players[0].name;
+    player1Name.innerHTML = `${players[0].name} <span class="rank-badge">${getRankInfo(players[0].elo).badge}</span>`;
     player1Score.textContent = players[0].score;
     
     if (players[1]) {
         document.getElementById('player2-score').style.display = 'flex';
-        player2Name.textContent = players[1].name;
+        player2Name.innerHTML = `${players[1].name} <span class="rank-badge">${getRankInfo(players[1].elo).badge}</span>`;
         player2Score.textContent = players[1].score;
     } else {
         document.getElementById('player2-score').style.display = 'none';
+    }
+
+    if (players[2]) {
+        document.getElementById('player3-score').style.display = 'flex';
+        player3Name.innerHTML = `${players[2].name} <span class="rank-badge">${getRankInfo(players[2].elo).badge}</span>`;
+        player3Score.textContent = players[2].score;
+    } else {
+        document.getElementById('player3-score').style.display = 'none';
     }
 });
 
@@ -375,9 +447,11 @@ socket.on('new_word', (data) => {
     if (data.q_type === 'vi-en') {
         answerInput.placeholder = 'Nhập từ tiếng Anh (VD: hello)';
         if (btnSpeak) btnSpeak.style.display = 'none'; // Không hiển thị lúc đang hỏi
+        if (btnMic) btnMic.style.display = 'block'; // Hiện nút Mic
     } else {
         answerInput.placeholder = 'Nhập nghĩa tiếng Việt (VD: xin chào)';
         if (btnSpeak) btnSpeak.style.display = 'flex';
+        if (btnMic) btnMic.style.display = 'none'; // Ẩn nút Mic
         playAudio(data.original_en);
     }
 
@@ -421,6 +495,7 @@ socket.on('correct_answer', (data) => {
     const players = data.players;
     player1Score.textContent = players[0].score;
     if (players[1]) player2Score.textContent = players[1].score;
+    if (players[2]) player3Score.textContent = players[2].score;
     
     if (englishWordEl.dataset.qType === 'vi-en') {
         playAudio(englishWordEl.dataset.originalEn);
@@ -448,6 +523,7 @@ socket.on('sync_result', (data) => {
     const players = data.players;
     player1Score.textContent = players[0].score;
     if (players[1]) player2Score.textContent = players[1].score;
+    if (players[2]) player3Score.textContent = players[2].score;
     
     if (englishWordEl.dataset.qType === 'vi-en') {
         playAudio(englishWordEl.dataset.originalEn);
@@ -496,17 +572,35 @@ socket.on('game_over', (data) => {
         winnerNameEl.textContent = 'Hoàn thành!';
         finalScoresEl.innerHTML = `Bạn đạt được: <span style="color: var(--primary); font-weight: bold;">${players[0].score}</span> điểm`;
     } else {
-        if (players[0].score > players[1].score) {
-            winnerNameEl.textContent = `${players[0].name} Thắng! 🎉`;
-        } else if (players[0].score < players[1].score) {
-            winnerNameEl.textContent = `${players[1].name} Thắng! 🎉`;
-        } else {
+        const maxScore = Math.max(...players.map(p => p.score));
+        const winners = players.filter(p => p.score === maxScore);
+        
+        if (winners.length === players.length && maxScore > 0) {
             winnerNameEl.textContent = 'Hòa Nhau! 🤝';
+        } else if (winners.length === players.length && maxScore === 0) {
+            winnerNameEl.textContent = 'Hòa Nhau! 🤝';
+        } else {
+            winnerNameEl.textContent = `${winners.map(w => w.name).join(' & ')} Thắng! 🎉`;
         }
-        finalScoresEl.innerHTML = `
-            ${players[0].name}: ${players[0].score} điểm<br>
-            ${players[1].name}: ${players[1].score} điểm
-        `;
+        
+        let scoresHtml = '';
+        players.forEach(p => {
+            const changeStr = p.elo_change >= 0 ? `+${p.elo_change}` : p.elo_change;
+            scoresHtml += `${p.name}: ${p.score} điểm <span style="font-size: 0.9rem; color: #fbbf24;">(Elo: ${changeStr})</span><br>`;
+            
+            // Nếu là mình thì lưu Elo vào máy
+            if (p.name === myName) {
+                myElo += p.elo_change;
+                if (myElo < 0) myElo = 0;
+                localStorage.setItem('ielts_arena_elo', myElo);
+                // Cập nhật lại ở sảnh
+                if (lobbyRankDisplay) {
+                    const rank = getRankInfo(myElo);
+                    lobbyRankDisplay.textContent = `${rank.name} (${myElo} Elo)`;
+                }
+            }
+        });
+        finalScoresEl.innerHTML = scoresHtml;
     }
 });
 
@@ -515,3 +609,46 @@ if (btnPlayAgain) {
         window.location.reload();
     });
 }
+
+// Emoji Handlers
+const emojiBtns = document.querySelectorAll('.emoji-btn');
+const emojiLayer = document.getElementById('emoji-layer');
+let emojiCooldown = false;
+
+emojiBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (emojiCooldown) return;
+        const emoji = btn.dataset.emoji;
+        if (currentRoomCode) {
+            socket.emit('send_emoji', { room_code: currentRoomCode, emoji: emoji });
+        }
+        
+        emojiCooldown = true;
+        setTimeout(() => emojiCooldown = false, 500); // Cooldown 0.5s để chống spam
+    });
+});
+
+socket.on('receive_emoji', (data) => {
+    const el = document.createElement('div');
+    el.className = 'floating-emoji';
+    el.textContent = data.emoji;
+    
+    // Vị trí ngẫu nhiên chiều ngang từ 10% đến 90%
+    const randomX = Math.floor(Math.random() * 80) + 10;
+    el.style.left = randomX + 'vw';
+    
+    // Xoay ngẫu nhiên từ -20 đến 20 độ để tự nhiên hơn
+    const randomRotate = Math.floor(Math.random() * 40) - 20;
+    el.style.transform = `rotate(${randomRotate}deg)`;
+    
+    if (emojiLayer) {
+        emojiLayer.appendChild(el);
+    } else {
+        document.body.appendChild(el);
+    }
+    
+    // Tự xóa phần tử sau khi animation (2.5s) kết thúc
+    setTimeout(() => {
+        el.remove();
+    }, 2600);
+});

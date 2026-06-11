@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from pymongo import MongoClient
 import json
 import random
 import string
@@ -9,6 +10,17 @@ import difflib
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ielts-secret-key-prod-ready'
+
+# --- MONGODB SETUP ---
+MONGO_URI = "mongodb+srv://lekinhbaochau_db_user:lHJyYGxwn0VqdTrr@cluster0.u9joaox.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+try:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    db = mongo_client['ielts_arena']
+    users_collection = db['users']
+    print("✅ Connected to MongoDB successfully!")
+except Exception as e:
+    print("❌ Could not connect to MongoDB:", e)
+    users_collection = None
 
 # Khởi tạo SocketIO dùng threading (tương thích hoàn hảo với Python 3.13)
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")
@@ -68,6 +80,58 @@ def generate_room_code():
 def index():
     return render_template('index.html')
 
+# === CÁC ROUTES CHO ADMIN ===
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_panel():
+    if request.method == 'POST':
+        pwd = request.form.get('password')
+        if pwd == 'admin123': # Mật khẩu siêu đơn giản
+            session['admin_logged_in'] = True
+            return redirect(url_for('admin_panel'))
+        return "Sai mật khẩu!", 401
+        
+    if not session.get('admin_logged_in'):
+        return '''
+        <body style="background: #0f172a; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+            <form method="post" style="background: #1e293b; padding: 40px; border-radius: 12px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                <h2 style="color: #3b82f6; margin-bottom: 20px;">IELTS Arena Admin</h2>
+                <input type="password" name="password" placeholder="Mật khẩu Admin" style="padding: 12px; width: 250px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; outline: none; margin-bottom: 15px;" required><br>
+                <button type="submit" style="padding: 12px 30px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%;">Đăng Nhập</button>
+            </form>
+        </body>
+        '''
+        
+    users = []
+    if users_collection is not None:
+        users = list(users_collection.find().sort('elo', -1))
+        
+    active_rooms = []
+    for code, room in rooms.items():
+        players = [p['name'] for p in room['players'].values() if p.get('connected')]
+        active_rooms.append({'code': code, 'mode': room.get('mode', 'multi'), 'players': players})
+        
+    return render_template('admin.html', users=users, active_rooms=active_rooms)
+
+@app.route('/admin/action', methods=['POST'])
+def admin_action():
+    if not session.get('admin_logged_in'): return "Unauthorized", 401
+    if users_collection is None: return "DB error", 500
+    
+    action = request.form.get('action')
+    user_id = request.form.get('user_id')
+    
+    if action == 'ban':
+        users_collection.update_one({'_id': user_id}, {'$set': {'banned': True}})
+    elif action == 'unban':
+        users_collection.update_one({'_id': user_id}, {'$set': {'banned': False}})
+    elif action == 'set_elo':
+        try:
+            new_elo = int(request.form.get('elo', 0))
+            users_collection.update_one({'_id': user_id}, {'$set': {'elo': new_elo}})
+        except: pass
+        
+    return redirect(url_for('admin_panel'))
+
 # === CÁC SỰ KIỆN SOCKET.IO ===
 
 @socketio.on('create_room')
@@ -111,11 +175,26 @@ def on_create_room(data):
     room_code = generate_room_code()
     
     session_id = data.get('session_id', request.sid)
+    elo = int(data.get('elo', 0))
+    
+    # Kiểm tra ban trên DB
+    if users_collection is not None:
+        db_user = users_collection.find_one({'_id': session_id})
+        if db_user and db_user.get('banned'):
+            emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
+            return
+        
+        # Lưu/cập nhật thông tin user
+        users_collection.update_one(
+            {'_id': session_id},
+            {'$set': {'name': player_name, 'elo': elo}, '$setOnInsert': {'banned': False}},
+            upsert=True
+        )
     
     # Khởi tạo state cho phòng
     rooms[room_code] = {
         'players': {
-            session_id: {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True}
+            session_id: {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True, 'elo': elo, 'user_id': session_id}
         },
         'vocab': room_vocab,
         'used_words': [],
@@ -139,12 +218,31 @@ def on_create_room(data):
         socketio.start_background_task(next_word, room_code)
     else:
         emit('room_created', {'room_code': room_code})
+        max_players = 2
+        if play_mode in ['multi3', 'sync3']:
+            max_players = 3
+        socketio.emit('waiting_update', {'current': 1, 'max': max_players}, room=room_code)
 
 @socketio.on('join_room')
 def on_join_room(data):
     player_name = data.get('name', 'Player 2')
     room_code = data.get('room_code', '').upper()
     session_id = data.get('session_id', request.sid)
+    elo = int(data.get('elo', 0))
+    
+    # Kiểm tra ban trên DB
+    if users_collection is not None:
+        db_user = users_collection.find_one({'_id': session_id})
+        if db_user and db_user.get('banned'):
+            emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
+            return
+            
+        # Lưu/cập nhật thông tin user
+        users_collection.update_one(
+            {'_id': session_id},
+            {'$set': {'name': player_name, 'elo': elo}, '$setOnInsert': {'banned': False}},
+            upsert=True
+        )
     
     if room_code not in rooms:
         emit('error', {'message': 'Phòng không tồn tại hoặc đã hết hạn!'})
@@ -153,23 +251,32 @@ def on_join_room(data):
     room = rooms[room_code]
     active_players = [p for p in room['players'].values() if p.get('connected', True)]
     
-    if len(active_players) >= 2 and session_id not in room['players']:
+    # Xác định số người chơi tối đa
+    max_players = 2
+    if room.get('mode') in ['multi3', 'sync3']:
+        max_players = 3
+    elif room.get('mode') == 'single':
+        max_players = 1
+    
+    if len(active_players) >= max_players and session_id not in room['players']:
         emit('error', {'message': 'Phòng đã đầy!'})
         return
         
     # Thêm hoặc cập nhật người chơi trong phòng
     if session_id not in room['players']:
-        room['players'][session_id] = {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True}
+        room['players'][session_id] = {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True, 'elo': elo, 'user_id': session_id}
     else:
         room['players'][session_id]['sid'] = request.sid
         room['players'][session_id]['connected'] = True
+        room['players'][session_id]['elo'] = elo
         
     join_room(room_code)
     
     emit('room_joined', {'room_code': room_code})
+    socketio.emit('waiting_update', {'current': len(room['players']), 'max': max_players}, room=room_code)
     
-    # Chỉ bắt đầu game nếu đủ 2 người và game chưa bắt đầu (vòng 0)
-    if len(room['players']) >= 2 and room['round_id'] == 0:
+    # Chỉ bắt đầu game nếu đủ người và game chưa bắt đầu (vòng 0)
+    if len(room['players']) >= max_players and room['round_id'] == 0:
         players_data = list(room['players'].values())
         socketio.emit('game_start', {'players': players_data}, room=room_code)
         socketio.start_background_task(next_word, room_code)
@@ -214,6 +321,27 @@ def next_word(room_code):
         if room['current_question'] > room['total_questions']:
             players_data = list(room['players'].values())
             players_data.sort(key=lambda x: x['score'], reverse=True)
+            
+            # Tính điểm Elo
+            if len(players_data) > 1:
+                max_score = players_data[0]['score']
+                is_all_tie = len(set(p['score'] for p in players_data)) == 1
+                for p in players_data:
+                    if is_all_tie:
+                        p['elo_change'] = 5 if max_score > 0 else 0
+                    elif p['score'] == max_score:
+                        p['elo_change'] = 15
+                    else:
+                        p['elo_change'] = -10
+            else:
+                players_data[0]['elo_change'] = 5 if players_data[0]['score'] > 0 else 0
+
+            # Cập nhật Elo lên DB
+            if users_collection is not None:
+                for p in players_data:
+                    new_elo = max(0, p.get('elo', 0) + p.get('elo_change', 0))
+                    users_collection.update_one({'_id': p['user_id']}, {'$set': {'elo': new_elo}})
+
             socketio.emit('game_over', {'players': players_data}, room=room_code)
             
             def remove_room():
@@ -301,7 +429,7 @@ def word_timer(room_code, round_id):
         if room['round_id'] == round_id and not room['answered']:
             room['answered'] = True # Khóa không cho nhận đáp án nữa
             
-            if room.get('mode') == 'sync':
+            if room.get('mode') in ['sync', 'sync3']:
                 evaluate_sync_round(room_code, room)
             else:
                 correct_answer = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
@@ -332,7 +460,7 @@ def on_submit_answer(data):
         correct_answer = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
         correct_answer = correct_answer.strip().lower()
         
-        if room.get('mode') == 'sync':
+        if room.get('mode') in ['sync', 'sync3']:
             room['sync_answers'][session_id] = answer
             emit('wait_for_other', {'message': 'Đang chờ đối thủ...'})
             
@@ -407,6 +535,13 @@ def on_save_vocab_set(data):
     save_custom_vocabs(vocabs)
     
     emit('vocab_saved', {'set_id': set_id})
+
+@socketio.on('send_emoji')
+def on_send_emoji(data):
+    room_code = data.get('room_code')
+    emoji = data.get('emoji')
+    if room_code in rooms:
+        socketio.emit('receive_emoji', {'emoji': emoji}, room=room_code)
 
 if __name__ == '__main__':
     # Sẵn sàng triển khai Render: Lấy cổng động từ biến môi trường

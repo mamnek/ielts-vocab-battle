@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - IELTS Arena</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0f172a; color: white; padding: 20px; }
+        h1 { color: #3b82f6; margin-bottom: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: #1e293b; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+        th { color: #94a3b8; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; }
+        .btn-danger { background: #ef4444; }
+        .btn-success { background: #10b981; }
+        .btn-primary { background: #3b82f6; }
+        input[type="number"] { width: 80px; padding: 5px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bảng Điều Khiển Admin</h1>
+        
+        <div class="card">
+            <h2>Phòng Đang Chơi (Live)</h2>
+            <table>
+                <tr><th>Mã Phòng</th><th>Chế Độ</th><th>Người Chơi</th></tr>
+                {% for room in active_rooms %}
+                <tr>
+                    <td><strong style="color: #fbbf24;">{{ room.code }}</strong></td>
+                    <td>{{ room.mode }}</td>
+                    <td>{{ room.players | join(', ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" style="text-align: center; color: #94a3b8;">Không có phòng nào đang mở.</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Danh Sách Người Chơi ({{ users|length }})</h2>
+            <table>
+                <tr>
+                    <th>Tên</th>
+                    <th>Elo</th>
+                    <th>Trạng Thái</th>
+                    <th>Hành Động</th>
+                </tr>
+                {% for u in users %}
+                <tr>
+                    <td><strong>{{ u.name }}</strong></td>
+                    <td>
+                        <form action="/admin/action" method="post" style="display: inline-flex; gap: 5px;">
+                            <input type="hidden" name="action" value="set_elo">
+                            <input type="hidden" name="user_id" value="{{ u._id }}">
+                            <input type="number" name="elo" value="{{ u.elo }}">
+                            <button type="submit" class="btn btn-primary">Lưu</button>
+                        </form>
+                    </td>
+                    <td>
+                        {% if u.banned %}
+                        <span style="color: #ef4444; font-weight: bold;">Banned</span>
+                        {% else %}
+                        <span style="color: #10b981;">Active</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="/admin/action" method="post" style="display: inline;">
+                            <input type="hidden" name="user_id" value="{{ u._id }}">
+                            {% if u.banned %}
+                            <input type="hidden" name="action" value="unban">
+                            <button type="submit" class="btn btn-success">Mở Khóa</button>
+                            {% else %}
+                            <input type="hidden" name="action" value="ban">
+                            <button type="submit" class="btn btn-danger">Cấm Chơi</button>
+                            {% endif %}
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Chưa có dữ liệu người chơi.</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+</html>
