@@ -177,19 +177,25 @@ def on_create_room(data):
     session_id = data.get('session_id', request.sid)
     elo = int(data.get('elo', 0))
     
-    # Kiểm tra ban trên DB
+    # Kiểm tra DB
     if users_collection is not None:
         db_user = users_collection.find_one({'_id': session_id})
-        if db_user and db_user.get('banned'):
-            emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
-            return
-        
-        # Lưu/cập nhật thông tin user
-        users_collection.update_one(
-            {'_id': session_id},
-            {'$set': {'name': player_name, 'elo': elo}, '$setOnInsert': {'banned': False}},
-            upsert=True
-        )
+        if db_user:
+            if db_user.get('banned'):
+                emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
+                return
+            # Dùng Elo chính thức từ Database
+            elo = db_user.get('elo', 0)
+            users_collection.update_one({'_id': session_id}, {'$set': {'name': player_name}})
+        else:
+            # Lưu user mới
+            users_collection.update_one(
+                {'_id': session_id},
+                {'$set': {'name': player_name, 'elo': elo, 'banned': False}},
+                upsert=True
+            )
+        # Gửi Elo chuẩn về lại cho Client để đồng bộ màn hình
+        emit('sync_data', {'elo': elo})
     
     # Khởi tạo state cho phòng
     rooms[room_code] = {
@@ -230,19 +236,24 @@ def on_join_room(data):
     session_id = data.get('session_id', request.sid)
     elo = int(data.get('elo', 0))
     
-    # Kiểm tra ban trên DB
+    # Kiểm tra DB
     if users_collection is not None:
         db_user = users_collection.find_one({'_id': session_id})
-        if db_user and db_user.get('banned'):
-            emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
-            return
-            
-        # Lưu/cập nhật thông tin user
-        users_collection.update_one(
-            {'_id': session_id},
-            {'$set': {'name': player_name, 'elo': elo}, '$setOnInsert': {'banned': False}},
-            upsert=True
-        )
+        if db_user:
+            if db_user.get('banned'):
+                emit('error', {'message': 'Tài khoản của bạn đã bị Admin cấm tham gia!'})
+                return
+            # Dùng Elo chính thức từ Database
+            elo = db_user.get('elo', 0)
+            users_collection.update_one({'_id': session_id}, {'$set': {'name': player_name}})
+        else:
+            users_collection.update_one(
+                {'_id': session_id},
+                {'$set': {'name': player_name, 'elo': elo, 'banned': False}},
+                upsert=True
+            )
+        # Gửi Elo chuẩn về lại cho Client
+        emit('sync_data', {'elo': elo})
     
     if room_code not in rooms:
         emit('error', {'message': 'Phòng không tồn tại hoặc đã hết hạn!'})

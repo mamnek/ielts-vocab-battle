@@ -108,8 +108,16 @@ function showScreen(screen) {
     screen.classList.add('active');
 }
 
+// Khôi phục tên người chơi
+let savedName = localStorage.getItem('ielts_arena_name');
+if (savedName && playerNameInput) {
+    playerNameInput.value = savedName;
+}
+
 function getPlayerName() {
-    return playerNameInput.value.trim() || 'Guest_' + Math.floor(Math.random() * 1000);
+    const name = playerNameInput.value.trim() || 'Guest_' + Math.floor(Math.random() * 1000);
+    localStorage.setItem('ielts_arena_name', name);
+    return name;
 }
 
 // Xử lý ẩn/hiện ô nhập Mã bộ từ vựng & số lượng câu
@@ -348,6 +356,15 @@ if (btnMic) {
 
 
 // --- LẮNG NGHE SỰ KIỆN TỪ SERVER ---
+
+socket.on('sync_data', (data) => {
+    myElo = data.elo;
+    localStorage.setItem('ielts_arena_elo', myElo);
+    if (lobbyRankDisplay) {
+        const rank = getRankInfo(myElo);
+        lobbyRankDisplay.textContent = `${rank.name} (${myElo} Elo)`;
+    }
+});
 
 socket.on('connect', () => {
     // Nếu mất kết nối và có lại, tự động báo cho server khôi phục session
