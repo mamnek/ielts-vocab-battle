@@ -129,6 +129,12 @@ def admin_action():
             new_elo = int(request.form.get('elo', 0))
             users_collection.update_one({'_id': user_id}, {'$set': {'elo': new_elo}})
         except: pass
+    elif action == 'delete':
+        users_collection.delete_one({'_id': user_id})
+    elif action == 'make_admin':
+        users_collection.update_one({'_id': user_id}, {'$set': {'is_admin': True}})
+    elif action == 'remove_admin':
+        users_collection.update_one({'_id': user_id}, {'$set': {'is_admin': False}})
         
     return redirect(url_for('admin_panel'))
 
@@ -186,16 +192,18 @@ def on_create_room(data):
                 return
             # Dùng Elo chính thức từ Database
             elo = db_user.get('elo', 0)
+            is_admin = db_user.get('is_admin', False)
             users_collection.update_one({'_id': session_id}, {'$set': {'name': player_name}})
         else:
             # Lưu user mới
             users_collection.update_one(
                 {'_id': session_id},
-                {'$set': {'name': player_name, 'elo': elo, 'banned': False}},
+                {'$set': {'name': player_name, 'elo': elo, 'banned': False, 'is_admin': False}},
                 upsert=True
             )
+            is_admin = False
         # Gửi Elo chuẩn về lại cho Client để đồng bộ màn hình
-        emit('sync_data', {'elo': elo})
+        emit('sync_data', {'elo': elo, 'is_admin': is_admin, 'name': db_user.get('name') if db_user else player_name})
     
     # Khởi tạo state cho phòng
     rooms[room_code] = {
@@ -245,15 +253,17 @@ def on_join_room(data):
                 return
             # Dùng Elo chính thức từ Database
             elo = db_user.get('elo', 0)
+            is_admin = db_user.get('is_admin', False)
             users_collection.update_one({'_id': session_id}, {'$set': {'name': player_name}})
         else:
             users_collection.update_one(
                 {'_id': session_id},
-                {'$set': {'name': player_name, 'elo': elo, 'banned': False}},
+                {'$set': {'name': player_name, 'elo': elo, 'banned': False, 'is_admin': False}},
                 upsert=True
             )
+            is_admin = False
         # Gửi Elo chuẩn về lại cho Client
-        emit('sync_data', {'elo': elo})
+        emit('sync_data', {'elo': elo, 'is_admin': is_admin, 'name': db_user.get('name') if db_user else player_name})
     
     if room_code not in rooms:
         emit('error', {'message': 'Phòng không tồn tại hoặc đã hết hạn!'})
@@ -553,6 +563,38 @@ def on_send_emoji(data):
     emoji = data.get('emoji')
     if room_code in rooms:
         socketio.emit('receive_emoji', {'emoji': emoji}, room=room_code)
+
+@socketio.on('request_leaderboard')
+def handle_leaderboard():
+    if users_collection is not None:
+        top_users = list(users_collection.find({'banned': {'$ne': True}}).sort('elo', -1).limit(10))
+        data = [{'name': u.get('name', 'Guest'), 'elo': u.get('elo', 0)} for u in top_users]
+        emit('leaderboard_data', data)
+
+@socketio.on('admin_skill')
+def handle_admin_skill(data):
+    room_code = data.get('room_code', '').upper()
+    skill = data.get('skill')
+    session_id = data.get('session_id')
+    
+    if room_code not in rooms: return
+    if users_collection is None: return
+    
+    user = users_collection.find_one({'_id': session_id})
+    if user and user.get('is_admin'):
+        room = rooms[room_code]
+        if skill == 'freeze':
+            socketio.emit('skill_freeze', {'sender_id': session_id}, room=room_code)
+        elif skill == 'auto_correct':
+            with room['lock']:
+                if room.get('answered', False): return
+                word_obj = room.get('current_word')
+                if not word_obj: return
+                current_qt = room.get('current_q_type', 'en-vi')
+                answer = word_obj['vi'] if current_qt == 'en-vi' else word_obj['en']
+            emit('skill_auto_correct', {'answer': answer}, to=request.sid)
+        elif skill == 'reset_timer':
+            socketio.emit('skill_reset_timer', {}, room=room_code)
 
 if __name__ == '__main__':
     # Sẵn sàng triển khai Render: Lấy cổng động từ biến môi trường
