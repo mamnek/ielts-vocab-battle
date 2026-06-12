@@ -1468,12 +1468,12 @@ async function showTranslationPopup(word, x, y) {
     popupWordVi.textContent = 'Đang dịch...';
     btnSavePopupWord.style.display = 'none';
     
-    // Gọi API dịch MyMemory (Free)
+    // Gọi API Google Translate (Miễn phí, chính xác hơn MyMemory)
     try {
-        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|vi`);
+        const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(word)}`);
         const data = await res.json();
-        if (data.responseData && data.responseData.translatedText) {
-            popupWordVi.textContent = data.responseData.translatedText;
+        if (data && data[0] && data[0][0] && data[0][0][0]) {
+            popupWordVi.textContent = data[0][0][0];
             btnSavePopupWord.style.display = 'block';
         } else {
             popupWordVi.textContent = 'Không tìm thấy nghĩa.';
