@@ -110,6 +110,16 @@ document.addEventListener('keydown', (e) => {
 function showScreen(screen) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     screen.classList.add('active');
+    
+    // Ẩn/hiện nút "Tạo bộ từ vựng" chỉ ở màn hình sảnh
+    const btnCreateVocab = document.getElementById('btn-show-create-vocab');
+    if (btnCreateVocab) {
+        if (screen.id === 'lobby-screen') {
+            btnCreateVocab.style.display = 'block';
+        } else {
+            btnCreateVocab.style.display = 'none';
+        }
+    }
 }
 
 // Khôi phục tên người chơi
@@ -406,16 +416,28 @@ socket.on('waiting_update', (data) => {
     }
 });
 
-// Sổ tay từ vựng sai
 socket.on('user_stats', (data) => {
     const btnRevenge = document.getElementById('btn-revenge');
+    const btnFlashcards = document.getElementById('btn-flashcards');
+    const btnFlashcardsCustom = document.getElementById('btn-flashcards-custom');
+    const flashcardCustomId = document.getElementById('flashcard-custom-id');
     const mistakeCount = document.getElementById('mistake-count');
+    
     if (btnRevenge && mistakeCount) {
         if (data.mistakes_count > 0) {
             btnRevenge.style.display = 'block';
+            btnRevenge.style.opacity = '1';
+            if (btnFlashcards) btnFlashcards.style.display = 'block';
             mistakeCount.textContent = data.mistakes_count;
+            btnRevenge.innerHTML = `📓 Ôn tập Từ Hay Sai (<span id="mistake-count" style="color: #fbbf24;">${data.mistakes_count}</span> từ đến hạn)`;
+        } else if (data.total_mistakes > 0) {
+            btnRevenge.style.display = 'block';
+            btnRevenge.style.opacity = '0.6';
+            if (btnFlashcards) btnFlashcards.style.display = 'block';
+            btnRevenge.innerHTML = `📓 Đã ôn hết (Tổng: ${data.total_mistakes} từ)`;
         } else {
             btnRevenge.style.display = 'none';
+            if (btnFlashcards) btnFlashcards.style.display = 'none';
         }
     }
 });
@@ -500,29 +522,65 @@ const totalQDisplay = document.getElementById('total-q-display');
 
 // Bắt đầu vòng mới: hiển thị từ mới và reset UI
 socket.on('new_word', (data) => {
-    englishWordEl.textContent = data.word;
     englishWordEl.dataset.originalEn = data.original_en;
     englishWordEl.dataset.qType = data.q_type;
     
-    if (data.q_type === 'vi-en') {
-        answerInput.placeholder = 'Nhập từ tiếng Anh (VD: hello)';
-        if (btnSpeak) btnSpeak.style.display = 'none'; // Không hiển thị lúc đang hỏi
-        if (btnMic) btnMic.style.display = 'block'; // Hiện nút Mic
+    if (data.q_type === 'collocation') {
+        englishWordEl.style.fontSize = '1.3rem';
+        englishWordEl.style.lineHeight = '1.6';
+        englishWordEl.style.fontWeight = 'normal';
+        englishWordEl.innerHTML = data.word.replace('_____', '<span style="border-bottom: 2px dashed #fbbf24; width: 60px; display: inline-block; margin: 0 5px;"></span>');
+        
+        document.getElementById('input-container').style.display = 'none';
+        const optionsContainer = document.getElementById('options-container');
+        optionsContainer.style.display = 'grid';
+        optionsContainer.innerHTML = '';
+        
+        // Trộn ngẫu nhiên 4 đáp án
+        const shuffled = [...data.options].sort(() => Math.random() - 0.5);
+        shuffled.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.style.background = '#334155';
+            btn.style.padding = '15px';
+            btn.style.fontSize = '1.1rem';
+            btn.textContent = opt;
+            btn.onclick = () => {
+                socket.emit('submit_answer', { room_code: currentRoomCode, answer: opt, session_id: mySessionId });
+                // Đổi màu đỏ để báo hiệu đã bấm thử (nếu đúng thì server sẽ đè màu xanh lên)
+                btn.disabled = true;
+                btn.style.background = '#ef4444';
+            };
+            optionsContainer.appendChild(btn);
+        });
     } else {
-        answerInput.placeholder = 'Nhập nghĩa tiếng Việt (VD: xin chào)';
-        if (btnSpeak) btnSpeak.style.display = 'flex';
-        if (btnMic) btnMic.style.display = 'none'; // Ẩn nút Mic
-        playAudio(data.original_en);
+        englishWordEl.style.fontSize = '';
+        englishWordEl.style.lineHeight = '';
+        englishWordEl.style.fontWeight = '';
+        englishWordEl.textContent = data.word;
+        
+        document.getElementById('input-container').style.display = 'flex';
+        document.getElementById('options-container').style.display = 'none';
+        if (data.q_type === 'vi-en') {
+            answerInput.placeholder = 'Nhập từ tiếng Anh (VD: hello)';
+            if (btnSpeak) btnSpeak.style.display = 'none'; // Không hiển thị lúc đang hỏi
+            if (btnMic) btnMic.style.display = 'block'; // Hiện nút Mic
+        } else {
+            answerInput.placeholder = 'Nhập nghĩa tiếng Việt (VD: xin chào)';
+            if (btnSpeak) btnSpeak.style.display = 'flex';
+            if (btnMic) btnMic.style.display = 'none'; // Ẩn nút Mic
+            playAudio(data.original_en);
+        }
+        answerInput.disabled = false;
+        btnSubmit.disabled = false;
+        answerInput.value = ''; // Xóa chữ gõ dở từ vòng trước
+        answerInput.focus();
     }
 
     if (currentQDisplay && totalQDisplay) {
         currentQDisplay.textContent = data.current_q;
         totalQDisplay.textContent = data.total_q;
     }
-    answerInput.disabled = false;
-    btnSubmit.disabled = false;
-    answerInput.value = ''; // Xóa chữ gõ dở từ vòng trước
-    answerInput.focus();
     resultMessage.textContent = '';
     resultMessage.className = 'result-message';
     
@@ -538,6 +596,7 @@ socket.on('new_word', (data) => {
             clearInterval(timerInterval);
             answerInput.disabled = true;
             btnSubmit.disabled = true;
+            document.querySelectorAll('#options-container button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
         }
     }, 1000);
 });
@@ -547,6 +606,15 @@ socket.on('correct_answer', (data) => {
     clearInterval(timerInterval);
     answerInput.disabled = true;
     btnSubmit.disabled = true;
+    document.querySelectorAll('#options-container button').forEach(b => { 
+        b.disabled = true; 
+        if (b.textContent === data.correct_answer) {
+            b.style.background = '#10b981';
+            b.style.opacity = '1';
+        } else {
+            b.style.opacity = '0.5'; 
+        }
+    });
     
     resultMessage.textContent = `🎯 ${data.winner} +10đ! Đáp án: ${data.correct_answer}`;
     resultMessage.className = 'result-message success';
@@ -567,6 +635,7 @@ socket.on('correct_answer', (data) => {
 socket.on('wait_for_other', (data) => {
     answerInput.disabled = true;
     btnSubmit.disabled = true;
+    document.querySelectorAll('#options-container button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
     resultMessage.textContent = `⏳ ${data.message}`;
     resultMessage.className = 'result-message';
     resultMessage.style.color = '#eab308'; // Màu vàng warning
@@ -576,6 +645,15 @@ socket.on('sync_result', (data) => {
     clearInterval(timerInterval);
     answerInput.disabled = true;
     btnSubmit.disabled = true;
+    document.querySelectorAll('#options-container button').forEach(b => { 
+        b.disabled = true; 
+        if (b.textContent === data.correct_answer) {
+            b.style.background = '#10b981';
+            b.style.opacity = '1';
+        } else {
+            b.style.opacity = '0.5'; 
+        }
+    });
     
     resultMessage.textContent = `🎯 ${data.winners.join(' và ')} đúng! Đáp án: ${data.correct_answer}`;
     resultMessage.className = 'result-message success';
@@ -596,6 +674,15 @@ socket.on('timeout', (data) => {
     clearInterval(timerInterval);
     answerInput.disabled = true;
     btnSubmit.disabled = true;
+    document.querySelectorAll('#options-container button').forEach(b => { 
+        b.disabled = true; 
+        if (b.textContent === data.correct_answer) {
+            b.style.background = '#10b981';
+            b.style.opacity = '1';
+        } else {
+            b.style.opacity = '0.5'; 
+        }
+    });
     resultMessage.textContent = `⏰ Hết giờ! Đáp án: ${data.correct_answer}`;
     resultMessage.className = 'result-message error';
     
@@ -979,4 +1066,519 @@ socket.on('speaking_result', (data) => {
         }
         speakingFeedback.appendChild(span);
     });
+});
+// --- TINDER FLASHCARDS ---
+const flashcardScreen = document.getElementById('flashcard-screen');
+const btnFlashcards = document.getElementById('btn-flashcards');
+const btnBackFromFlashcards = document.getElementById('btn-back-from-flashcards');
+const flashcardContainer = document.getElementById('flashcard-container');
+const btnSwipeLeft = document.getElementById('btn-swipe-left');
+const btnSwipeRight = document.getElementById('btn-swipe-right');
+const btnFlashcardSpeak = document.getElementById('btn-flashcard-speak');
+const flashcardProgress = document.getElementById('flashcard-progress');
+const flashcardDoneMsg = document.getElementById('flashcard-done-msg');
+const btnFlashcardFinish = document.getElementById('btn-flashcard-finish');
+
+const flashcardCustomIdInput = document.getElementById('flashcard-custom-id');
+const btnFlashcardsCustom = document.getElementById('btn-flashcards-custom');
+
+let flashcardsList = [];
+let currentFlashcardIndex = 0;
+
+if (btnFlashcards) {
+    btnFlashcards.addEventListener('click', () => {
+        showScreen(flashcardScreen);
+        flashcardContainer.innerHTML = '';
+        flashcardContainer.style.display = 'block';
+        flashcardDoneMsg.style.display = 'none';
+        btnSwipeLeft.style.display = 'flex';
+        btnSwipeRight.style.display = 'flex';
+        flashcardProgress.textContent = 'Đang tải...';
+        socket.emit('request_flashcards', { session_id: mySessionId });
+    });
+}
+
+if (btnFlashcardsCustom) {
+    btnFlashcardsCustom.addEventListener('click', () => {
+        const setId = flashcardCustomIdInput.value.trim().toUpperCase();
+        if (!setId) {
+            alert('Vui lòng nhập mã bộ từ vựng!');
+            return;
+        }
+        
+        showScreen(flashcardScreen);
+        flashcardContainer.innerHTML = '';
+        flashcardContainer.style.display = 'block';
+        flashcardDoneMsg.style.display = 'none';
+        btnSwipeLeft.style.display = 'flex';
+        btnSwipeRight.style.display = 'flex';
+        flashcardProgress.textContent = 'Đang tải...';
+        
+        socket.emit('request_custom_flashcards', { set_id: setId });
+    });
+}
+
+if (btnBackFromFlashcards) {
+    btnBackFromFlashcards.addEventListener('click', () => {
+        showScreen(lobbyScreen);
+    });
+}
+
+if (btnFlashcardFinish) {
+    btnFlashcardFinish.addEventListener('click', () => {
+        showScreen(lobbyScreen);
+        // Cập nhật lại số liệu
+        socket.emit('request_user_stats', { session_id: mySessionId });
+    });
+}
+
+socket.on('flashcards_data', (data) => {
+    flashcardsList = data;
+    currentFlashcardIndex = 0;
+    
+    if (flashcardsList.length === 0) {
+        flashcardProgress.textContent = '0/0';
+        flashcardContainer.style.display = 'none';
+        btnSwipeLeft.style.display = 'none';
+        btnSwipeRight.style.display = 'none';
+        flashcardDoneMsg.style.display = 'block';
+        flashcardDoneMsg.querySelector('p').textContent = 'Không tìm thấy thẻ nào (hoặc mã không tồn tại / chưa đến hạn ôn).';
+        return;
+    }
+    
+    renderFlashcards();
+});
+
+function renderFlashcards() {
+    flashcardContainer.innerHTML = '';
+    
+    if (currentFlashcardIndex >= flashcardsList.length) {
+        flashcardProgress.textContent = `${flashcardsList.length}/${flashcardsList.length}`;
+        flashcardContainer.style.display = 'none';
+        btnSwipeLeft.style.display = 'none';
+        btnSwipeRight.style.display = 'none';
+        flashcardDoneMsg.style.display = 'block';
+        return;
+    }
+    
+    flashcardProgress.textContent = `${currentFlashcardIndex + 1}/${flashcardsList.length}`;
+    
+    // Render tối đa 3 thẻ để tạo hiệu ứng xếp chồng (từ dưới lên trên)
+    const maxRender = Math.min(3, flashcardsList.length - currentFlashcardIndex);
+    
+    for (let i = maxRender - 1; i >= 0; i--) {
+        const index = currentFlashcardIndex + i;
+        const wordData = flashcardsList[index];
+        const isTopCard = (i === 0);
+        
+        const cardEl = document.createElement('div');
+        cardEl.className = 'tinder-card';
+        // Hiệu ứng xếp chồng
+        const scale = 1 - (i * 0.05);
+        const translateY = i * 15;
+        cardEl.style.transform = `scale(${scale}) translateY(${translateY}px)`;
+        cardEl.style.zIndex = 100 - i;
+        
+        let sentenceHtml = '';
+        if (wordData.sentence) {
+            sentenceHtml = `<div class="card-sentence">Ví dụ: ${wordData.sentence.replace('_____', '...')}</div>`;
+        }
+        
+        cardEl.innerHTML = `
+            <div class="front">
+                <div class="card-en">${wordData.en}</div>
+                <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 20px;">(Chạm để lật)</div>
+                <div class="flashcard-stamp stamp-nope">QUÊN</div>
+                <div class="flashcard-stamp stamp-like">ĐÃ NHỚ</div>
+            </div>
+            <div class="back">
+                <div class="card-vi">${wordData.vi}</div>
+                ${sentenceHtml}
+                <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 20px;">(Chạm để lật)</div>
+            </div>
+        `;
+        
+        flashcardContainer.appendChild(cardEl);
+        
+        if (isTopCard) {
+            initHammerForCard(cardEl, wordData);
+        }
+    }
+}
+
+function initHammerForCard(cardEl, wordData) {
+    const hammer = new Hammer(cardEl);
+    let isFlipped = false;
+    const nopeStamp = cardEl.querySelector('.stamp-nope');
+    const likeStamp = cardEl.querySelector('.stamp-like');
+    
+    // Xử lý lật thẻ
+    hammer.on('tap', () => {
+        isFlipped = !isFlipped;
+        if (isFlipped) {
+            cardEl.classList.add('flipped');
+        } else {
+            cardEl.classList.remove('flipped');
+        }
+        // Đọc từ vựng khi lật
+        playAudio(wordData.en);
+    });
+    
+    // Xử lý kéo thả (Swipe)
+    hammer.on('pan', (ev) => {
+        cardEl.classList.add('moving');
+        if (ev.deltaX === 0) return;
+        if (ev.center.x === 0 && ev.center.y === 0) return; // Fix bug occasionally returning 0
+        
+        // Di chuyển thẻ
+        const rotate = ev.deltaX * 0.05;
+        cardEl.style.transform = `translate(${ev.deltaX}px, ${ev.deltaY}px) rotate(${rotate}deg)`;
+        
+        // Hiển thị stamp tùy theo hướng kéo
+        if (ev.deltaX > 50) {
+            likeStamp.style.opacity = Math.min(1, ev.deltaX / 100);
+            nopeStamp.style.opacity = 0;
+        } else if (ev.deltaX < -50) {
+            nopeStamp.style.opacity = Math.min(1, Math.abs(ev.deltaX) / 100);
+            likeStamp.style.opacity = 0;
+        } else {
+            likeStamp.style.opacity = 0;
+            nopeStamp.style.opacity = 0;
+        }
+    });
+    
+    hammer.on('panend', (ev) => {
+        cardEl.classList.remove('moving');
+        const threshold = window.innerWidth * 0.25; // Kéo qua 25% màn hình là tính
+        
+        if (ev.deltaX > threshold) {
+            // Vuốt phải -> Đã nhớ
+            throwCard(cardEl, 1000, ev.deltaY, 'remembered', wordData);
+        } else if (ev.deltaX < -threshold) {
+            // Vuốt trái -> Quên
+            throwCard(cardEl, -1000, ev.deltaY, 'forgot', wordData);
+        } else {
+            // Hủy vuốt, đưa về chỗ cũ
+            cardEl.style.transform = `translate(0px, 0px) rotate(0deg)`;
+            likeStamp.style.opacity = 0;
+            nopeStamp.style.opacity = 0;
+        }
+    });
+}
+
+function throwCard(cardEl, x, y, status, wordData) {
+    cardEl.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.5s';
+    cardEl.style.transform = `translate(${x}px, ${y}px) rotate(${x * 0.1}deg)`;
+    cardEl.style.opacity = 0;
+    
+    // Gửi kết quả về server
+    socket.emit('flashcard_result', {
+        session_id: mySessionId,
+        en: wordData.en,
+        status: status
+    });
+    
+    setTimeout(() => {
+        currentFlashcardIndex++;
+        renderFlashcards();
+    }, 300);
+}
+
+// Gắn sự kiện cho các nút bấm bên dưới
+if (btnSwipeLeft) {
+    btnSwipeLeft.addEventListener('click', () => {
+        const topCard = document.querySelector('.tinder-card:last-child');
+        if (topCard && currentFlashcardIndex < flashcardsList.length) {
+            throwCard(topCard, -1000, -100, 'forgot', flashcardsList[currentFlashcardIndex]);
+        }
+    });
+}
+
+if (btnSwipeRight) {
+    btnSwipeRight.addEventListener('click', () => {
+        const topCard = document.querySelector('.tinder-card:last-child');
+        if (topCard && currentFlashcardIndex < flashcardsList.length) {
+            throwCard(topCard, 1000, -100, 'remembered', flashcardsList[currentFlashcardIndex]);
+        }
+    });
+}
+
+if (btnFlashcardSpeak) {
+    btnFlashcardSpeak.addEventListener('click', () => {
+        if (currentFlashcardIndex < flashcardsList.length) {
+            playAudio(flashcardsList[currentFlashcardIndex].en);
+            
+            // Animation
+            btnFlashcardSpeak.style.transform = 'scale(0.9)';
+            setTimeout(() => btnFlashcardSpeak.style.transform = 'scale(1)', 150);
+        }
+    });
+}
+
+// --- READING & OCR ---
+const readingScreen = document.getElementById('reading-screen');
+const btnShowReading = document.getElementById('btn-show-reading');
+const btnBackFromReading = document.getElementById('btn-back-from-reading');
+const readingPassageSelect = document.getElementById('reading-passage-select');
+const readingImageUpload = document.getElementById('reading-image-upload');
+const ocrStatus = document.getElementById('ocr-status');
+const readingTextContainer = document.getElementById('reading-text-container');
+const btnExportReadingVocab = document.getElementById('btn-export-reading-vocab');
+const translatePopup = document.getElementById('translate-popup');
+const popupWordEn = document.getElementById('popup-word-en');
+const popupWordVi = document.getElementById('popup-word-vi');
+const btnClosePopup = document.getElementById('btn-close-popup');
+const btnSavePopupWord = document.getElementById('btn-save-popup-word');
+
+let readingCart = [];
+
+const samplePassages = {
+    'easy': `The history of chocolate begins in Mesoamerica. Fermented beverages made from chocolate date back to 450 BC. The Aztecs believed that cacao seeds were the gift of Quetzalcoatl, the god of wisdom, and the seeds once had so much value that they were used as a form of currency. Originally prepared only as a drink, chocolate was served bitter, mixed with spices or corn puree. It was believed to have aphrodisiac powers and to give the drinker strength. Today, such drinks are also known as "Chilate" and are made by locals in the South of Mexico.`,
+    'medium': `The future of renewable energy is rapidly evolving as technologies like solar and wind power become more affordable and efficient. Governments worldwide are investing heavily in green infrastructure to combat climate change and reduce carbon emissions. Innovations in battery storage allow grids to store surplus energy, ensuring a continuous supply even when the sun isn't shining or the wind isn't blowing. However, transitioning away from fossil fuels poses significant economic and logistical challenges that require global cooperation.`,
+    'hard': `Neuroplasticity refers to the brain's remarkable ability to reorganize itself by forming new neural connections throughout life. This phenomenon allows the neurons (nerve cells) in the brain to compensate for injury and disease and to adjust their activities in response to new situations or to changes in their environment. Brain reorganization takes place by mechanisms such as "axonal sprouting" in which undamaged axons grow new nerve endings to reconnect neurons whose links were injured or severed. Undamaged axons can also sprout nerve endings and connect with other undamaged nerve cells, forming new neural pathways to accomplish a needed function.`
+};
+
+// Hàm hỗ trợ render text để có thể click từng từ trên mobile
+function renderTranslatableText(text) {
+    const words = text.split(/(\s+)/);
+    const html = words.map(w => {
+        if (w.trim() === '') return w;
+        const safeW = w.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<span class="translatable-word" style="cursor: pointer; border-radius: 4px; transition: background 0.2s;">${safeW}</span>`;
+    }).join('');
+    readingTextContainer.innerHTML = `<p style="line-height: 1.8; font-size: 1.1rem; color: white; white-space: pre-wrap;">${html}</p>`;
+}
+
+if (btnShowReading) {
+    btnShowReading.addEventListener('click', () => {
+        showScreen(readingScreen);
+        translatePopup.style.display = 'none';
+    });
+}
+
+if (btnBackFromReading) {
+    btnBackFromReading.addEventListener('click', () => {
+        showScreen(lobbyScreen);
+        translatePopup.style.display = 'none';
+    });
+}
+
+if (readingPassageSelect) {
+    readingPassageSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (samplePassages[val]) {
+            // Hiển thị bài đọc
+            renderTranslatableText(samplePassages[val]);
+            readingImageUpload.value = ''; // Reset file upload
+        }
+    });
+}
+
+if (readingImageUpload) {
+    readingImageUpload.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        readingPassageSelect.value = ''; // Reset select
+        ocrStatus.style.display = 'block';
+        readingTextContainer.innerHTML = `<p style="color: var(--text-muted); text-align: center; margin-top: 50px;">Đang xử lý tài liệu... Tùy dung lượng mà có thể mất vài giây.</p>`;
+        
+        try {
+            if (file.type.startsWith('image/')) {
+                // Xử lý Ảnh bằng Tesseract OCR
+                const worker = await Tesseract.createWorker('eng');
+                const ret = await worker.recognize(file);
+                await worker.terminate();
+                
+                ocrStatus.style.display = 'none';
+                renderTranslatableText(ret.data.text);
+            } else if (file.type === 'application/pdf') {
+                // Xử lý PDF bằng PDF.js
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                
+                const maxPages = Math.min(pdf.numPages, 10); // Đọc tối đa 10 trang để tránh lag
+                let fullText = '';
+                
+                for (let i = 1; i <= maxPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const strings = content.items.map(item => item.str);
+                    fullText += strings.join(' ') + '\\n\\n';
+                }
+                
+                ocrStatus.style.display = 'none';
+                renderTranslatableText(fullText);
+            } else if (file.type === 'text/plain') {
+                // Xử lý file text TXT
+                const text = await file.text();
+                ocrStatus.style.display = 'none';
+                renderTranslatableText(text);
+            } else {
+                throw new Error('Định dạng file không được hỗ trợ! Vui lòng chọn Ảnh, PDF hoặc TXT.');
+            }
+        } catch (error) {
+            ocrStatus.style.display = 'none';
+            readingTextContainer.innerHTML = `<p style="color: #ef4444; text-align: center; margin-top: 50px;">Lỗi: ${error.message}</p>`;
+            console.error(error);
+        }
+    });
+}
+
+// Helper hiển thị popup dịch
+let currentTranslateWord = '';
+async function showTranslationPopup(word, x, y) {
+    currentTranslateWord = word;
+    
+    // Hiện popup với chữ loading
+    translatePopup.style.display = 'block';
+    
+    // Nếu là Mobile (chiều rộng nhỏ), ghim hẳn xuống đáy màn hình để không bị đè bởi Menu iOS (Sao chép, Tra cứu...)
+    if (window.innerWidth < 768) {
+        translatePopup.style.position = 'fixed';
+        translatePopup.style.bottom = '20px';
+        translatePopup.style.top = 'auto';
+        translatePopup.style.left = '50%';
+        translatePopup.style.transform = 'translateX(-50%)';
+        translatePopup.style.width = '90%';
+        translatePopup.style.zIndex = '9999';
+        translatePopup.style.boxShadow = '0 -5px 25px rgba(0,0,0,0.8)';
+    } else {
+        // Desktop: Hiển thị ngay dưới con trỏ chuột
+        translatePopup.style.position = 'absolute';
+        translatePopup.style.top = `${y + 10}px`;
+        translatePopup.style.left = `${x}px`;
+        translatePopup.style.bottom = 'auto';
+        translatePopup.style.transform = 'none';
+        translatePopup.style.width = '240px';
+        
+        // Giới hạn popup không bị tràn màn hình
+        const popupRect = translatePopup.getBoundingClientRect();
+        if (popupRect.right > window.innerWidth) {
+            translatePopup.style.left = `${window.innerWidth - popupRect.width - 10}px`;
+        }
+    }
+    
+    // Hiển thị text lên popup (cắt gọn nếu quá dài)
+    let displayWord = word;
+    if (displayWord.length > 40) displayWord = displayWord.substring(0, 40) + '...';
+    popupWordEn.textContent = displayWord;
+    
+    popupWordVi.textContent = 'Đang dịch...';
+    btnSavePopupWord.style.display = 'none';
+    
+    // Gọi API dịch MyMemory (Free)
+    try {
+        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|vi`);
+        const data = await res.json();
+        if (data.responseData && data.responseData.translatedText) {
+            popupWordVi.textContent = data.responseData.translatedText;
+            btnSavePopupWord.style.display = 'block';
+        } else {
+            popupWordVi.textContent = 'Không tìm thấy nghĩa.';
+        }
+    } catch (err) {
+        popupWordVi.textContent = 'Lỗi kết nối mạng.';
+    }
+}
+
+// Xử lý SINGLE CLICK (Chạm) để dịch 1 từ trên Mobile (tránh bị hiện menu Select của đt)
+if (readingTextContainer) {
+    readingTextContainer.addEventListener('click', async (e) => {
+        // Nếu user đang bôi đen text thì KHÔNG trigger click (để dành cho mouseup xử lý cụm từ)
+        if (window.getSelection().toString().trim().length > 0) return;
+
+        if (e.target.classList.contains('translatable-word')) {
+            const word = e.target.innerText.trim().replace(/[^a-zA-Z]/g, '');
+            if (word && word.length > 1) {
+                // Highlight the word temporarily
+                const originalBg = e.target.style.backgroundColor;
+                e.target.style.backgroundColor = 'rgba(236, 72, 153, 0.5)';
+                setTimeout(() => e.target.style.backgroundColor = originalBg, 2000);
+                
+                showTranslationPopup(word, e.pageX, e.pageY);
+            }
+        }
+    });
+}
+
+// Xử lý Bôi đen để dịch nguyên cụm (Dùng selectionchange để hoạt động chuẩn xác trên iOS)
+document.addEventListener('selectionchange', () => {
+    clearTimeout(window.selectionTimeout);
+    window.selectionTimeout = setTimeout(() => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        
+        if (readingTextContainer && readingTextContainer.contains(selection.anchorNode)) {
+            const word = selection.toString().trim();
+            if (word && word.length > 1 && word.includes(' ')) {
+                // Xác định vị trí (cho PC, mobile sẽ tự ghi đè ở hàm showTranslationPopup)
+                let x = 0, y = 0;
+                if (selection.rangeCount > 0) {
+                    const rect = selection.getRangeAt(0).getBoundingClientRect();
+                    x = rect.left + window.scrollX;
+                    y = rect.bottom + window.scrollY;
+                }
+                showTranslationPopup(word, x, y);
+            }
+        }
+    }, 400); // Đợi 400ms để chắc chắn user đã bôi đen xong
+});
+
+if (btnClosePopup) {
+    btnClosePopup.addEventListener('click', () => {
+        translatePopup.style.display = 'none';
+    });
+}
+
+if (btnSavePopupWord) {
+    btnSavePopupWord.addEventListener('click', () => {
+        if (!currentTranslateWord) return;
+        
+        // Kiểm tra xem đã có trong giỏ chưa
+        const exists = readingCart.find(w => w.en.toLowerCase() === currentTranslateWord);
+        if (!exists) {
+            readingCart.push({
+                en: currentTranslateWord,
+                vi: popupWordVi.textContent,
+                sentence: ''
+            });
+            btnExportReadingVocab.textContent = `🛒 Giỏ từ (${readingCart.length})`;
+            
+            // Effect
+            btnSavePopupWord.textContent = '✓ Đã thêm';
+            btnSavePopupWord.style.background = '#3b82f6';
+            setTimeout(() => {
+                translatePopup.style.display = 'none';
+                btnSavePopupWord.textContent = '+ Thêm vào Giỏ';
+                btnSavePopupWord.style.background = '#10b981';
+            }, 1000);
+        } else {
+            alert('Từ này đã có trong giỏ của bạn rồi!');
+        }
+    });
+}
+
+if (btnExportReadingVocab) {
+    btnExportReadingVocab.addEventListener('click', () => {
+        if (readingCart.length === 0) {
+            alert('Giỏ từ của bạn đang trống! Hãy bôi đen từ nào đó trong bài đọc để thêm vào giỏ nhé.');
+            return;
+        }
+        
+        socket.emit('save_custom_vocab', { pairs: readingCart });
+    });
+}
+
+socket.on('vocab_saved', (data) => {
+    // Only handle if we have items in our cart, meaning we just saved reading cart
+    if (readingCart.length > 0) {
+        alert(`🎉 Chúc mừng! Bạn đã tạo thành công bộ từ vựng.\\n\\nMÃ BỘ TỪ CỦA BẠN: ${data.set_id}\\n\\nHãy sao chép mã này và ra ngoài sảnh dùng tính năng [Tinder Flashcards] -> [Ôn mã này] nhé!`);
+        
+        // Reset giỏ
+        readingCart = [];
+        btnExportReadingVocab.textContent = `🛒 Giỏ từ (0)`;
+        translatePopup.style.display = 'none';
+    }
 });

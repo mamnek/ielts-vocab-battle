@@ -1,0 +1,92 @@
+[
+    {
+        "sentence": "The government should _____ strict measures to solve the problem.",
+        "options": ["implement", "make", "do", "take"],
+        "answer": "implement",
+        "vi": "thi hành biện pháp"
+    },
+    {
+        "sentence": "It is important to _____ a balance between work and life.",
+        "options": ["strike", "make", "do", "keep"],
+        "answer": "strike",
+        "vi": "đạt được sự cân bằng"
+    },
+    {
+        "sentence": "He was asked to _____ a presentation at the conference.",
+        "options": ["deliver", "say", "speak", "talk"],
+        "answer": "deliver",
+        "vi": "thuyết trình"
+    },
+    {
+        "sentence": "The new policy will _____ a significant impact on the economy.",
+        "options": ["have", "create", "make", "do"],
+        "answer": "have",
+        "vi": "có tác động"
+    },
+    {
+        "sentence": "We need to _____ out a thorough investigation.",
+        "options": ["carry", "bring", "take", "make"],
+        "answer": "carry",
+        "vi": "thực hiện (điều tra)"
+    },
+    {
+        "sentence": "She managed to _____ her goal after years of hard work.",
+        "options": ["achieve", "reach", "succeed", "make"],
+        "answer": "achieve",
+        "vi": "đạt được (mục tiêu)"
+    },
+    {
+        "sentence": "The company plans to _____ a new product next month.",
+        "options": ["launch", "open", "start", "begin"],
+        "answer": "launch",
+        "vi": "ra mắt (sản phẩm)"
+    },
+    {
+        "sentence": "It is crucial to _____ attention to the details.",
+        "options": ["pay", "give", "make", "take"],
+        "answer": "pay",
+        "vi": "chú ý đến"
+    },
+    {
+        "sentence": "The sudden noise _____ her a fright.",
+        "options": ["gave", "made", "took", "brought"],
+        "answer": "gave",
+        "vi": "làm cho sợ hãi"
+    },
+    {
+        "sentence": "Please _____ an effort to arrive on time.",
+        "options": ["make", "do", "take", "have"],
+        "answer": "make",
+        "vi": "cố gắng"
+    },
+    {
+        "sentence": "He decided to _____ the opportunity to study abroad.",
+        "options": ["seize", "catch", "hold", "grab"],
+        "answer": "seize",
+        "vi": "nắm bắt (cơ hội)"
+    },
+    {
+        "sentence": "The factory will _____ 500 jobs in the local area.",
+        "options": ["create", "make", "build", "produce"],
+        "answer": "create",
+        "vi": "tạo ra (việc làm)"
+    },
+    {
+        "sentence": "They had to _____ a difficult decision regarding the project.",
+        "options": ["make", "do", "take", "give"],
+        "answer": "make",
+        "vi": "đưa ra quyết định"
+    },
+    {
+        "sentence": "The evidence does not _____ support to his claim.",
+        "options": ["lend", "give", "make", "provide"],
+        "answer": "lend",
+        "vi": "tăng thêm (sự hỗ trợ/tin cậy)"
+    },
+    {
+        "sentence": "She has a tendency to _____ to conclusions without all the facts.",
+        "options": ["jump", "leap", "skip", "run"],
+        "answer": "jump",
+        "vi": "vội vã kết luận"
+    }
+]

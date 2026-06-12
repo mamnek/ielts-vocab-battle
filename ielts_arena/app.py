@@ -7,6 +7,17 @@ import string
 import threading
 import os
 import difflib
+import time
+
+def get_srs_delay(level):
+    delays = {
+        0: 0,
+        1: 86400,          # 1 ngày
+        2: 86400 * 3,      # 3 ngày
+        3: 86400 * 7,      # 7 ngày
+        4: 86400 * 30      # 30 ngày
+    }
+    return time.time() + delays.get(level, 86400 * 30)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ielts-secret-key-prod-ready'
@@ -31,6 +42,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VOCAB_FILE_PATH = os.path.join(BASE_DIR, 'vocab.json')
 with open(VOCAB_FILE_PATH, 'r', encoding='utf-8') as f:
     vocab_list = json.load(f)
+
+COLLOC_FILE_PATH = os.path.join(BASE_DIR, 'collocations.json')
+with open(COLLOC_FILE_PATH, 'r', encoding='utf-8') as f:
+    collocations_raw = json.load(f)
+    colloc_list = [{'en': w['answer'], 'vi': w['vi'], 'sentence': w['sentence'], 'options': w['options']} for w in collocations_raw]
+
 
 # Biến lưu trữ trạng thái các phòng
 rooms = {}
@@ -170,18 +187,33 @@ def on_create_room(data):
             if not db_user or not db_user.get('mistakes'):
                 emit('error', {'message': 'Tuyệt vời! Bạn không có từ vựng nào sai cả. Hãy chơi thêm để thử thách nhé.'})
                 return
-            room_vocab = list(db_user['mistakes'].values())
+            
+            now = time.time()
+            due_words = []
+            for k, w in db_user['mistakes'].items():
+                if w.get('next_review', 0) <= now:
+                    due_words.append(w)
+            
+            if not due_words:
+                emit('error', {'message': 'Các từ sai của bạn chưa đến hạn ôn tập! Não bộ vẫn đang nhớ tốt, hãy quay lại vào ngày mai nhé.'})
+                return
+                
+            room_vocab = due_words
             total_questions = min(question_count, len(room_vocab))
         else:
             emit('error', {'message': 'Database chưa kết nối!'})
             return
     else:
-        # Lọc danh sách mặc định theo topic
-        room_vocab = [w for w in vocab_list if vocab_topic == 'all' or w.get('topic') == vocab_topic]
-        if not room_vocab:
-            emit('error', {'message': 'Không có từ vựng nào thuộc Chủ đề này!'})
-            return
-        total_questions = question_count
+        if q_type == 'collocation':
+            room_vocab = colloc_list.copy()
+            total_questions = min(question_count, len(room_vocab))
+        else:
+            # Lọc danh sách mặc định theo topic
+            room_vocab = [w for w in vocab_list if vocab_topic == 'all' or w.get('topic') == vocab_topic]
+            if not room_vocab:
+                emit('error', {'message': 'Không có từ vựng nào thuộc Chủ đề này!'})
+                return
+            total_questions = question_count
             
     room_code = generate_room_code()
     
@@ -221,6 +253,7 @@ def on_create_room(data):
         'total_questions': total_questions,
         'mode': play_mode,
         'q_type': q_type,
+        'vocab_type': vocab_type,
         'sync_answers': {},
         'lock': threading.Lock() # Khóa an toàn chống Race Condition
     }
@@ -322,14 +355,20 @@ def on_reconnect_session(data):
             if room['current_word'] and not room['answered']:
                 current_qt = room.get('current_q_type', 'en-vi')
                 display_word = room['current_word']['vi'] if current_qt == 'vi-en' else room['current_word']['en']
+                
+                # Nếu là dạng đục lỗ (collocation), hiển thị câu đục lỗ
+                if 'sentence' in room['current_word']:
+                    display_word = room['current_word']['sentence']
+                    
                 emit('new_word', {
                     'word': display_word, 
                     'original_en': room['current_word']['en'],
                     'q_type': current_qt,
+                    'options': room['current_word'].get('options', []),
                     'time': 15,
                     'current_q': room['current_question'],
                     'total_q': room['total_questions']
-                })
+                }, room=room_code)
         else:
             emit('reconnect_success', {'room_code': room_code})
 
@@ -348,11 +387,36 @@ def next_word(room_code):
             if users_collection is not None:
                 for sid, p in room['players'].items():
                     if sid != winner_sid:
+                        mistake_data = {
+                            'en': cw['en'], 
+                            'vi': cw['vi'], 
+                            'level': 0, 
+                            'next_review': time.time()
+                        }
+                        if 'sentence' in cw: mistake_data['sentence'] = cw['sentence']
+                        if 'options' in cw: mistake_data['options'] = cw['options']
+                        
                         users_collection.update_one(
                             {'_id': p['user_id']},
-                            {'$set': {f'mistakes.{en_key}': {'en': cw['en'], 'vi': cw['vi'], 'errors': 2}}},
+                            {'$set': {f'mistakes.{en_key}': mistake_data}},
                             upsert=True
                         )
+                    else:
+                        if room.get('vocab_type') == 'mistakes':
+                            db_user = users_collection.find_one({'_id': p['user_id']})
+                            if db_user and 'mistakes' in db_user and en_key in db_user['mistakes']:
+                                old_level = db_user['mistakes'][en_key].get('level', 0)
+                                new_level = old_level + 1
+                                if new_level > 4:
+                                    users_collection.update_one({'_id': p['user_id']}, {'$unset': {f'mistakes.{en_key}': ""}})
+                                else:
+                                    users_collection.update_one(
+                                        {'_id': p['user_id']},
+                                        {'$set': {
+                                            f'mistakes.{en_key}.level': new_level,
+                                            f'mistakes.{en_key}.next_review': get_srs_delay(new_level)
+                                        }}
+                                    )
                         
         # Reset winner_sid for next round
         room['winner_sid'] = None
@@ -424,12 +488,15 @@ def next_word(room_code):
         total_q = room['total_questions']
         
     display_word = word_obj['vi'] if current_qt == 'vi-en' else word_obj['en']
-    
+    if 'sentence' in word_obj:
+        display_word = word_obj['sentence']
+        
     # Emit từ cho cả 2 client
     socketio.emit('new_word', {
         'word': display_word, 
         'original_en': word_obj['en'],
         'q_type': current_qt,
+        'options': word_obj.get('options', []),
         'time': 15,
         'current_q': current_q,
         'total_q': total_q
@@ -439,7 +506,8 @@ def next_word(room_code):
     socketio.start_background_task(word_timer, room_code, current_round)
 
 def evaluate_sync_round(room_code, room):
-    correct_ans = room['current_word']['en'] if room.get('current_q_type', 'en-vi') == 'vi-en' else room['current_word']['vi']
+    qt = room.get('current_q_type', 'en-vi')
+    correct_ans = room['current_word']['en'] if qt in ['vi-en', 'collocation'] else room['current_word']['vi']
     winners = []
     
     for sid, ans in room['sync_answers'].items():
@@ -503,7 +571,7 @@ def on_submit_answer(data):
         correct_vi = room['current_word']['vi'].strip().lower()
         current_qt = room.get('current_q_type', 'en-vi')
         
-        correct_answer = correct_en if current_qt == 'vi-en' else correct_vi
+        correct_answer = correct_en if current_qt in ['vi-en', 'collocation'] else correct_vi
         
         if room.get('mode') in ['sync', 'sync3']:
             room['sync_answers'][session_id] = answer
@@ -617,7 +685,78 @@ def handle_user_stats(data):
         user = users_collection.find_one({'_id': session_id})
         if user:
             mistakes = user.get('mistakes', {})
-            emit('user_stats', {'mistakes_count': len(mistakes)})
+            now = time.time()
+            due_count = sum(1 for w in mistakes.values() if w.get('next_review', 0) <= now)
+            emit('user_stats', {'mistakes_count': due_count, 'total_mistakes': len(mistakes)})
+
+@socketio.on('request_flashcards')
+def handle_request_flashcards(data):
+    session_id = data.get('session_id')
+    if users_collection is None:
+        emit('flashcards_data', [])
+        return
+        
+    user = users_collection.find_one({'_id': session_id})
+    cards = []
+    if user and 'mistakes' in user:
+        now = time.time()
+        for k, w in user['mistakes'].items():
+            if w.get('next_review', 0) <= now:
+                cards.append(w)
+    # Shuffle for randomness
+    random.shuffle(cards)
+    emit('flashcards_data', cards)
+
+@socketio.on('request_custom_flashcards')
+def handle_request_custom_flashcards(data):
+    set_id = data.get('set_id', '').upper()
+    vocabs = load_custom_vocabs()
+    
+    if set_id in vocabs:
+        cards = vocabs[set_id]
+        # Xáo trộn thẻ
+        random.shuffle(cards)
+        emit('flashcards_data', cards)
+    else:
+        emit('flashcards_data', [])
+
+@socketio.on('flashcard_result')
+def handle_flashcard_result(data):
+    session_id = data.get('session_id')
+    en_word = data.get('en', '')
+    status = data.get('status') # 'remembered' or 'forgot'
+    
+    if users_collection is None or not en_word: return
+    
+    user = users_collection.find_one({'_id': session_id})
+    if user and 'mistakes' in user:
+        en_key = en_word.replace('.', '')
+        if en_key in user['mistakes']:
+            old_level = user['mistakes'][en_key].get('level', 0)
+            
+            if status == 'remembered':
+                new_level = old_level + 1
+                if new_level > 4:
+                    # Đã thuộc hẳn -> Xóa khỏi sổ tay
+                    users_collection.update_one({'_id': session_id}, {'$unset': {f'mistakes.{en_key}': ""}})
+                else:
+                    users_collection.update_one(
+                        {'_id': session_id},
+                        {'$set': {
+                            f'mistakes.{en_key}.level': new_level,
+                            f'mistakes.{en_key}.next_review': get_srs_delay(new_level)
+                        }}
+                    )
+            elif status == 'forgot':
+                # Quên -> Giảm level về 0 hoặc 1 để học lại sớm hơn
+                new_level = max(0, old_level - 1)
+                users_collection.update_one(
+                    {'_id': session_id},
+                    {'$set': {
+                        f'mistakes.{en_key}.level': new_level,
+                        f'mistakes.{en_key}.next_review': get_srs_delay(new_level) # Ôn lại sớm
+                    }}
+                )
 
 @socketio.on('check_speaking')
 def handle_check_speaking(data):
