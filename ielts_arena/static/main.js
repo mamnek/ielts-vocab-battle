@@ -461,6 +461,7 @@ socket.on('error', (data) => { lobbyMessage.textContent = data.message; });
 
 // Kết quả lưu bộ từ vựng
 socket.on('vocab_save_error', (data) => {
+    alert(data.message);
     vocabMessage.textContent = data.message;
     vocabMessage.style.color = 'var(--error)';
 });
@@ -475,7 +476,9 @@ socket.on('vocab_saved', (data) => {
     customVocabIdInput.value = data.set_id;
     
     // Copy mã vào clipboard
-    navigator.clipboard.writeText(data.set_id).catch(() => {});
+    if (navigator && navigator.clipboard) {
+        navigator.clipboard.writeText(data.set_id).catch(() => {});
+    }
     
     // Về sảnh chờ sau 2s
     setTimeout(() => {
@@ -1567,7 +1570,7 @@ if (btnExportReadingVocab) {
             return;
         }
         
-        socket.emit('save_custom_vocab', { pairs: readingCart });
+        socket.emit('save_vocab_set', { pairs: readingCart });
     });
 }
 
@@ -1576,6 +1579,10 @@ socket.on('vocab_saved', (data) => {
     if (readingCart.length > 0) {
         alert(`🎉 Chúc mừng! Bạn đã tạo thành công bộ từ vựng.\\n\\nMÃ BỘ TỪ CỦA BẠN: ${data.set_id}\\n\\nHãy sao chép mã này và ra ngoài sảnh dùng tính năng [Tinder Flashcards] -> [Ôn mã này] nhé!`);
         
+        let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
+        savedVocabs[data.set_id] = readingCart;
+        localStorage.setItem('my_custom_vocabs', JSON.stringify(savedVocabs));
+
         // Reset giỏ
         readingCart = [];
         btnExportReadingVocab.textContent = `🛒 Giỏ từ (0)`;
