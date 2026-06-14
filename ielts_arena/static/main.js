@@ -233,7 +233,6 @@ if (btnParseBulk && bulkVocabInput) {
     });
 }
 
-// Lưu bộ từ vựng vào LocalStorage của trình duyệt
 btnSaveVocab.addEventListener('click', () => {
     const pairs = [];
     document.querySelectorAll('.vocab-pair').forEach(pair => {
@@ -256,26 +255,8 @@ btnSaveVocab.addEventListener('click', () => {
     savedVocabs[setId] = pairs;
     localStorage.setItem('my_custom_vocabs', JSON.stringify(savedVocabs));
     
-    vocabMessage.textContent = `Thành công! Mã bộ từ vựng: ${setId}`;
-    vocabMessage.style.color = 'var(--success)';
-    
-    // Tự động copy và chuyển về sảnh
-    if (navigator && navigator.clipboard) {
-        navigator.clipboard.writeText(setId).catch(() => {});
-    }
-    
-    setTimeout(() => {
-        showScreen(lobbyScreen);
-        if (btnShowCreateVocab) btnShowCreateVocab.style.display = 'block';
-        vocabMessage.textContent = '';
-        
-        // Tự điền vào form tạo phòng
-        if (vocabTypeSelect) vocabTypeSelect.value = 'custom';
-        if (customVocabIdInput) {
-            customVocabIdInput.style.display = 'block';
-            customVocabIdInput.value = setId;
-        }
-    }, 2500);
+    // Đồng bộ lên Server
+    socket.emit('save_vocab_set', { set_id: setId, pairs: pairs, source: 'manual' });
 });
 
 // Bắt sự kiện tạo phòng
@@ -298,10 +279,9 @@ btnCreate.addEventListener('click', () => {
         let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
         if (savedVocabs[customSetId]) {
             customVocabData = savedVocabs[customSetId];
-        } else {
-            lobbyMessage.textContent = 'Mã bộ từ vựng không tồn tại trên thiết bị này!';
-            return;
         }
+        // Cho phép gửi lên server kể cả khi không có trong localStorage
+        // Server sẽ tìm trong cơ sở dữ liệu nếu mảng customVocabData trống
     }
     
     socket.emit('create_room', { 
@@ -467,25 +447,39 @@ socket.on('vocab_save_error', (data) => {
 });
 
 socket.on('vocab_saved', (data) => {
-    vocabMessage.textContent = `Thành công! Mã của bạn là: ${data.set_id} (Đã copy)`;
-    vocabMessage.style.color = 'var(--success)';
-    
-    // Tự động điền cho người dùng
-    vocabTypeSelect.value = 'custom';
-    customVocabIdInput.style.display = 'block';
-    customVocabIdInput.value = data.set_id;
-    
-    // Copy mã vào clipboard
-    if (navigator && navigator.clipboard) {
-        navigator.clipboard.writeText(data.set_id).catch(() => {});
+    let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
+    if (data.source === 'reading') {
+        alert(`🎉 Chúc mừng! Bạn đã tạo thành công bộ từ vựng.\n\nMÃ BỘ TỪ CỦA BẠN: ${data.set_id}\n\nHãy sao chép mã này và ra ngoài sảnh dùng tính năng [Tinder Flashcards] -> [Ôn mã này] nhé!`);
+        savedVocabs[data.set_id] = readingCart;
+        localStorage.setItem('my_custom_vocabs', JSON.stringify(savedVocabs));
+
+        // Reset giỏ
+        readingCart = [];
+        if (btnExportReadingVocab) btnExportReadingVocab.textContent = `🛒 Giỏ từ (0)`;
+        if (translatePopup) translatePopup.style.display = 'none';
+    } else {
+        vocabMessage.textContent = `Thành công! Mã của bạn là: ${data.set_id} (Đã copy)`;
+        vocabMessage.style.color = 'var(--success)';
+        
+        // Tự động điền cho người dùng
+        if (vocabTypeSelect) vocabTypeSelect.value = 'custom';
+        if (customVocabIdInput) {
+            customVocabIdInput.style.display = 'block';
+            customVocabIdInput.value = data.set_id;
+        }
+        
+        // Copy mã vào clipboard
+        if (navigator && navigator.clipboard) {
+            navigator.clipboard.writeText(data.set_id).catch(() => {});
+        }
+        
+        // Về sảnh chờ sau 2s
+        setTimeout(() => {
+            showScreen(lobbyScreen);
+            if (btnShowCreateVocab) btnShowCreateVocab.style.display = 'block';
+            vocabMessage.textContent = '';
+        }, 2500);
     }
-    
-    // Về sảnh chờ sau 2s
-    setTimeout(() => {
-        showScreen(lobbyScreen);
-        btnShowCreateVocab.style.display = 'block';
-        vocabMessage.textContent = '';
-    }, 2500);
 });
 
 // Trận đấu bắt đầu
@@ -1117,7 +1111,18 @@ if (btnFlashcardsCustom) {
         btnSwipeRight.style.display = 'flex';
         flashcardProgress.textContent = 'Đang tải...';
         
-        socket.emit('request_custom_flashcards', { set_id: setId });
+        let savedVocabs = JSON.parse(localStorage.getItem('my_custom_vocabs') || '{}');
+        if (savedVocabs[setId]) {
+             // Sử dụng dữ liệu từ LocalStorage để an toàn khi server restart
+             let localCards = savedVocabs[setId];
+             localCards = [...localCards].sort(() => Math.random() - 0.5);
+             flashcardsList = localCards;
+             currentFlashcardIndex = 0;
+             renderFlashcards();
+        } else {
+             // Gửi yêu cầu lên server nếu mã không có trên máy (người khác share)
+             socket.emit('request_custom_flashcards', { set_id: setId });
+        }
     });
 }
 
@@ -1570,7 +1575,7 @@ if (btnExportReadingVocab) {
             return;
         }
         
-        socket.emit('save_vocab_set', { pairs: readingCart });
+        socket.emit('save_vocab_set', { pairs: readingCart, source: 'reading' });
     });
 }
 

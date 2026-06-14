@@ -176,11 +176,15 @@ def on_create_room(data):
     
     if vocab_type == 'custom':
         custom_vocab_data = data.get('custom_vocab_data', [])
+        if not custom_vocab_data and custom_set_id:
+            vocabs = load_custom_vocabs()
+            if custom_set_id in vocabs:
+                custom_vocab_data = vocabs[custom_set_id]
         if not custom_vocab_data:
-            emit('error', {'message': 'Không tìm thấy dữ liệu bộ từ vựng!'})
+            emit('error', {'message': 'Không tìm thấy dữ liệu bộ từ vựng hoặc mã không hợp lệ!'})
             return
         room_vocab = custom_vocab_data
-        total_questions = min(question_count, len(room_vocab))
+        total_questions = len(room_vocab)
     elif vocab_type == 'mistakes':
         if users_collection is not None:
             db_user = users_collection.find_one({'_id': session_id})
@@ -641,11 +645,14 @@ def on_disconnect():
 @socketio.on('save_vocab_set')
 def on_save_vocab_set(data):
     pairs = data.get('pairs', [])
+    source = data.get('source', 'manual')
     if len(pairs) < 3:
         emit('vocab_save_error', {'message': 'Cần ít nhất 3 cặp từ!'})
         return
         
-    set_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+    set_id = data.get('set_id')
+    if not set_id:
+        set_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
     
     formatted_pairs = []
     for p in pairs:
@@ -662,7 +669,7 @@ def on_save_vocab_set(data):
     vocabs[set_id] = formatted_pairs
     save_custom_vocabs(vocabs)
     
-    emit('vocab_saved', {'set_id': set_id})
+    emit('vocab_saved', {'set_id': set_id, 'source': source})
 
 @socketio.on('send_emoji')
 def on_send_emoji(data):
