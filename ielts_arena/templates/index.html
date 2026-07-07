@@ -10,6 +10,41 @@
     <div id="emoji-layer"></div>
     <button id="btn-show-create-vocab" class="btn secondary" style="position: absolute; top: 20px; right: 20px; width: auto; padding: 10px 15px; font-size: 0.9rem; z-index: 10;">+ Tạo bộ từ vựng</button>
 
+    <!-- Widget Báo Giờ Luyện Tập / Timekeeping (Pomodoro) -->
+    <div id="timekeeper-widget" class="timekeeper-box">
+        <div class="timekeeper-header">
+            <span class="timekeeper-title">⏱️ Timekeeping</span>
+            <button id="btn-toggle-timekeeper" class="timekeeper-toggle-btn" title="Thu gọn / Mở rộng">−</button>
+        </div>
+        <div id="timekeeper-content">
+            <div id="timekeeper-status-badge" class="status-badge state-focus">Đang học ✍️</div>
+            
+            <div class="timekeeper-display">
+                <span id="timekeeper-timer">25:00</span>
+            </div>
+            
+            <div class="timekeeper-settings">
+                <div class="setting-group">
+                    <label>Học (phút)</label>
+                    <input type="number" id="timekeeper-study-input" value="25" min="1" max="180">
+                </div>
+                <div class="setting-group">
+                    <label>Nghỉ (phút)</label>
+                    <input type="number" id="timekeeper-break-input" value="5" min="1" max="60">
+                </div>
+            </div>
+            
+            <div class="timekeeper-actions">
+                <button id="btn-timekeeper-start" class="btn-tk btn-tk-primary">Bắt đầu</button>
+                <button id="btn-timekeeper-reset" class="btn-tk btn-tk-secondary">Đặt lại</button>
+            </div>
+            
+            <div class="timekeeper-stats">
+                <span>Tập trung hôm nay: <strong id="timekeeper-total-focus">0</strong> phút</span>
+            </div>
+        </div>
+    </div>
+
     <div id="app">
         <!-- Màn hình 1: Sảnh chờ -->
         <div id="lobby-screen" class="screen active">

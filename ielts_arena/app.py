@@ -97,6 +97,10 @@ def generate_room_code():
 def index():
     return render_template('index.html')
 
+@app.route('/ping')
+def ping():
+    return {"status": "ok"}, 200
+
 # === CÁC ROUTES CHO ADMIN ===
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():

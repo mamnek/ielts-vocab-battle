@@ -241,3 +241,249 @@ input:focus { border-color: var(--primary); }
     border-color: #10b981;
     transform: rotate(-15deg);
 }
+
+/* ==========================================================================
+   TIMEKEEPER WIDGET (POMODORO) STYLING
+   ========================================================================== */
+.timekeeper-box {
+    position: absolute;
+    top: 75px;
+    right: 20px;
+    width: 220px;
+    background: rgba(30, 41, 59, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 15px;
+    z-index: 99;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'Inter', sans-serif;
+}
+
+/* Neon glow based on current state */
+.timekeeper-box.state-focus-active {
+    border-color: rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.2), 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.timekeeper-box.state-break-active {
+    border-color: rgba(16, 185, 129, 0.6);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.2), 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.timekeeper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    user-select: none;
+}
+
+.timekeeper-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: 0.5px;
+}
+
+.timekeeper-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.2s;
+}
+
+.timekeeper-toggle-btn:hover {
+    color: #f8fafc;
+}
+
+.status-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 20px;
+    display: inline-block;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.state-focus {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.state-break {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.timekeeper-display {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin: 5px 0 15px 0;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+    text-align: center;
+}
+
+.timekeeper-settings {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.setting-group {
+    flex: 1;
+    text-align: left;
+}
+
+.setting-group label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.setting-group input {
+    width: 100%;
+    padding: 8px;
+    font-size: 0.9rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: white;
+    margin-bottom: 0;
+    text-align: center;
+}
+
+.timekeeper-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.btn-tk {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-tk-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-tk-primary:hover {
+    background: var(--primary-hover);
+}
+
+.btn-tk-secondary {
+    background: #334155;
+    color: var(--text-muted);
+}
+
+.btn-tk-secondary:hover {
+    color: white;
+    background: #475569;
+}
+
+.timekeeper-stats {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 10px;
+    margin-top: 5px;
+    text-align: center;
+}
+
+/* Collapsed State */
+.timekeeper-box.collapsed {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.timekeeper-box.collapsed #timekeeper-content,
+.timekeeper-box.collapsed .timekeeper-title {
+    display: none;
+}
+
+.timekeeper-box.collapsed .timekeeper-header {
+    margin-bottom: 0;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+}
+
+.timekeeper-box.collapsed .timekeeper-toggle-btn {
+    font-size: 0.9rem;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mini indicator inside the collapsed button */
+.timekeeper-box.collapsed .timekeeper-toggle-btn::before {
+    content: '⏱️';
+    font-size: 1.3rem;
+    margin-bottom: 2px;
+}
+
+.timekeeper-box.collapsed .timekeeper-toggle-btn::after {
+    content: attr(data-time);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #60a5fa;
+}
+
+.timekeeper-box.collapsed.state-break-active .timekeeper-toggle-btn::after {
+    color: #34d399;
+}
+
+/* Responsive queries */
+@media (max-width: 900px) {
+    .timekeeper-box {
+        position: static;
+        width: 100%;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        border-radius: 16px;
+    }
+    
+    .timekeeper-box.collapsed {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        top: auto;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        margin: 0;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+}

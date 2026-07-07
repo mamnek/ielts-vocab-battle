@@ -1594,3 +1594,238 @@ socket.on('vocab_saved', (data) => {
         translatePopup.style.display = 'none';
     }
 });
+
+// ==========================================================================
+// RENDER KEEP-ALIVE SYSTEM
+// ==========================================================================
+function sendKeepAlivePing() {
+    fetch('/ping')
+        .then(res => res.json())
+        .then(data => console.log('[Render Keep-Alive] Ping success:', data))
+        .catch(err => console.error('[Render Keep-Alive] Ping failed:', err));
+}
+
+// Initial ping on load, then every 5 minutes (300,000 ms)
+sendKeepAlivePing();
+setInterval(sendKeepAlivePing, 5 * 60 * 1000);
+
+
+// ==========================================================================
+// TIMEKEEPER WIDGET (POMODORO) LOGIC
+// ==========================================================================
+(function() {
+    const tkWidget = document.getElementById('timekeeper-widget');
+    const tkTimer = document.getElementById('timekeeper-timer');
+    const tkStatusBadge = document.getElementById('timekeeper-status-badge');
+    const tkStudyInput = document.getElementById('timekeeper-study-input');
+    const tkBreakInput = document.getElementById('timekeeper-break-input');
+    const tkBtnStart = document.getElementById('btn-timekeeper-start');
+    const tkBtnReset = document.getElementById('btn-timekeeper-reset');
+    const tkBtnToggle = document.getElementById('btn-toggle-timekeeper');
+    const tkTotalFocusSpan = document.getElementById('timekeeper-total-focus');
+
+    if (!tkWidget || !tkTimer || !tkStatusBadge || !tkStudyInput || !tkBreakInput || !tkBtnStart || !tkBtnReset || !tkBtnToggle || !tkTotalFocusSpan) {
+        console.warn('Timekeeper DOM elements not found.');
+        return;
+    }
+
+    let tkTimerInterval = null;
+    let tkTimeLeft = 25 * 60; // default 25 minutes
+    let tkIsRunning = false;
+    let tkCurrentState = 'focus'; // 'focus' or 'break'
+    let tkEndTime = 0;
+    let tkTotalFocusMinutes = parseInt(localStorage.getItem('tk_total_focus')) || 0;
+
+    // Web Audio API Sound System (Ding-Dong Chimes)
+    function playTimekeeperSound(type) {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            const ctx = new AudioContext();
+            
+            const playChime = (freq1, freq2, duration) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq1, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(freq2, ctx.currentTime + 0.12);
+                
+                gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+                
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            };
+
+            if (type === 'focus') {
+                playChime(523.25, 880, 0.5); // C5 to A5
+                setTimeout(() => playChime(659.25, 1046.50, 0.7), 120); // E5 to C6
+            } else if (type === 'break') {
+                playChime(880, 523.25, 0.5); // A5 to C5
+                setTimeout(() => playChime(783.99, 440, 0.7), 120); // G5 to A4
+            }
+        } catch (e) {
+            console.error('Audio synthesis failed:', e);
+        }
+    }
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function tkUpdate() {
+        if (!tkIsRunning) return;
+        
+        const now = Date.now();
+        const remaining = Math.max(0, Math.round((tkEndTime - now) / 1000));
+        tkTimeLeft = remaining;
+        
+        const timeStr = formatTime(tkTimeLeft);
+        tkTimer.textContent = timeStr;
+        tkBtnToggle.setAttribute('data-time', timeStr);
+        
+        const stateText = tkCurrentState === 'focus' ? '✍️ Học' : '☕ Nghỉ';
+        document.title = `(${timeStr}) ${stateText} | IELTS Arena`;
+        
+        if (tkTimeLeft <= 0) {
+            if (tkCurrentState === 'focus') {
+                const studiedMins = parseInt(tkStudyInput.value) || 0;
+                tkTotalFocusMinutes += studiedMins;
+                localStorage.setItem('tk_total_focus', tkTotalFocusMinutes);
+                tkTotalFocusSpan.textContent = tkTotalFocusMinutes;
+                
+                tkCurrentState = 'break';
+                tkStatusBadge.textContent = 'Đang nghỉ ☕';
+                tkStatusBadge.className = 'status-badge state-break';
+                tkWidget.classList.remove('state-focus-active');
+                tkWidget.classList.add('state-break-active');
+                
+                playTimekeeperSound('break');
+                
+                const breakMins = parseInt(tkBreakInput.value) || 5;
+                tkTimeLeft = breakMins * 60;
+                tkEndTime = Date.now() + tkTimeLeft * 1000;
+            } else {
+                tkCurrentState = 'focus';
+                tkStatusBadge.textContent = 'Đang học ✍️';
+                tkStatusBadge.className = 'status-badge state-focus';
+                tkWidget.classList.remove('state-break-active');
+                tkWidget.classList.add('state-focus-active');
+                
+                playTimekeeperSound('focus');
+                
+                const studyMins = parseInt(tkStudyInput.value) || 25;
+                tkTimeLeft = studyMins * 60;
+                tkEndTime = Date.now() + tkTimeLeft * 1000;
+            }
+        }
+    }
+
+    function tkStart() {
+        if (tkIsRunning) {
+            tkIsRunning = false;
+            tkBtnStart.textContent = 'Bắt đầu';
+            tkBtnStart.className = 'btn-tk btn-tk-primary';
+            clearInterval(tkTimerInterval);
+        } else {
+            tkIsRunning = true;
+            tkBtnStart.textContent = 'Tạm dừng';
+            tkBtnStart.className = 'btn-tk btn-tk-secondary';
+            
+            tkStudyInput.disabled = true;
+            tkBreakInput.disabled = true;
+            
+            tkEndTime = Date.now() + tkTimeLeft * 1000;
+            
+            playTimekeeperSound(tkCurrentState);
+            
+            if (tkCurrentState === 'focus') {
+                tkWidget.classList.add('state-focus-active');
+                tkWidget.classList.remove('state-break-active');
+            } else {
+                tkWidget.classList.add('state-break-active');
+                tkWidget.classList.remove('state-focus-active');
+            }
+            
+            tkTimerInterval = setInterval(tkUpdate, 200);
+        }
+    }
+
+    function tkReset() {
+        tkIsRunning = false;
+        clearInterval(tkTimerInterval);
+        
+        tkStudyInput.disabled = false;
+        tkBreakInput.disabled = false;
+        
+        tkBtnStart.textContent = 'Bắt đầu';
+        tkBtnStart.className = 'btn-tk btn-tk-primary';
+        
+        tkCurrentState = 'focus';
+        tkStatusBadge.textContent = 'Đang học ✍️';
+        tkStatusBadge.className = 'status-badge state-focus';
+        
+        tkWidget.classList.remove('state-focus-active', 'state-break-active');
+        
+        const studyMins = parseInt(tkStudyInput.value) || 25;
+        tkTimeLeft = studyMins * 60;
+        tkTimer.textContent = formatTime(tkTimeLeft);
+        tkBtnToggle.setAttribute('data-time', formatTime(tkTimeLeft));
+        
+        document.title = 'IELTS Arena - Realtime Battle';
+    }
+
+    // Event Listeners
+    tkBtnStart.addEventListener('click', tkStart);
+    tkBtnReset.addEventListener('click', tkReset);
+
+    tkStudyInput.addEventListener('change', () => {
+        if (!tkIsRunning && tkCurrentState === 'focus') {
+            const mins = parseInt(tkStudyInput.value) || 25;
+            tkTimeLeft = mins * 60;
+            tkTimer.textContent = formatTime(tkTimeLeft);
+            tkBtnToggle.setAttribute('data-time', formatTime(tkTimeLeft));
+        }
+    });
+
+    tkBreakInput.addEventListener('change', () => {
+        if (!tkIsRunning && tkCurrentState === 'break') {
+            const mins = parseInt(tkBreakInput.value) || 5;
+            tkTimeLeft = mins * 60;
+            tkTimer.textContent = formatTime(tkTimeLeft);
+            tkBtnToggle.setAttribute('data-time', formatTime(tkTimeLeft));
+        }
+    });
+
+    // Minimize / Expand logic
+    tkBtnToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isCollapsed = tkWidget.classList.contains('collapsed');
+        if (isCollapsed) {
+            tkWidget.classList.remove('collapsed');
+            tkBtnToggle.textContent = '−';
+        } else {
+            tkWidget.classList.add('collapsed');
+            tkBtnToggle.textContent = '+';
+        }
+    });
+
+    tkWidget.addEventListener('click', () => {
+        if (tkWidget.classList.contains('collapsed')) {
+            tkWidget.classList.remove('collapsed');
+            tkBtnToggle.textContent = '−';
+        }
+    });
+
+    // Initialize stats
+    tkTotalFocusSpan.textContent = tkTotalFocusMinutes;
+    const initialMins = parseInt(tkStudyInput.value) || 25;
+    tkTimeLeft = initialMins * 60;
+    tkTimer.textContent = formatTime(tkTimeLeft);
+    tkBtnToggle.setAttribute('data-time', formatTime(tkTimeLeft));
+})();
