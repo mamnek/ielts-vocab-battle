@@ -169,6 +169,7 @@ def on_create_room(data):
     play_mode = data.get('play_mode', 'multi')
     q_type = data.get('q_type', 'en-vi')
     vocab_topic = data.get('vocab_topic', 'all')
+    bot_difficulty = data.get('bot_difficulty', 'medium')
     
     try:
         question_count = int(data.get('question_count', 10))
@@ -247,11 +248,35 @@ def on_create_room(data):
         # Gửi Elo chuẩn về lại cho Client để đồng bộ màn hình
         emit('sync_data', {'elo': elo, 'is_admin': is_admin, 'name': db_user.get('name') if db_user else player_name})
     
+    # Khởi tạo danh sách người chơi, thêm Bot nếu chơi với Bot
+    room_players = {
+        session_id: {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True, 'elo': elo, 'user_id': session_id}
+    }
+    if play_mode == 'bot':
+        bot_names = {
+            'easy': '🧒 Học sinh (AI)',
+            'medium': '👨‍🏫 Giáo viên IELTS (AI)',
+            'hard': '🤖 Oxford Bot (AI)'
+        }
+        bot_elos = {
+            'easy': 500,
+            'medium': 1200,
+            'hard': 2000
+        }
+        bot_id = 'bot_player_id'
+        room_players[bot_id] = {
+            'name': bot_names.get(bot_difficulty, 'AI Bot'),
+            'score': 0,
+            'sid': 'bot_sid',
+            'connected': True,
+            'elo': bot_elos.get(bot_difficulty, 1000),
+            'user_id': bot_id,
+            'is_bot': True
+        }
+
     # Khởi tạo state cho phòng
     rooms[room_code] = {
-        'players': {
-            session_id: {'name': player_name, 'score': 0, 'sid': request.sid, 'connected': True, 'elo': elo, 'user_id': session_id}
-        },
+        'players': room_players,
         'vocab': room_vocab,
         'used_words': [],
         'current_word': None,
@@ -260,6 +285,7 @@ def on_create_room(data):
         'current_question': 0,
         'total_questions': total_questions,
         'mode': play_mode,
+        'bot_difficulty': bot_difficulty,
         'q_type': q_type,
         'vocab_type': vocab_type,
         'sync_answers': {},
@@ -268,7 +294,7 @@ def on_create_room(data):
     
     join_room(room_code)
     
-    if play_mode == 'single':
+    if play_mode in ['single', 'bot']:
         emit('room_joined', {'room_code': room_code})
         players_data = list(rooms[room_code]['players'].values())
         emit('game_start', {'players': players_data}, room=room_code)
@@ -453,6 +479,8 @@ def next_word(room_code):
             # Cập nhật Elo lên DB
             if users_collection is not None:
                 for p in players_data:
+                    if p.get('is_bot'):
+                        continue
                     new_elo = max(0, p.get('elo', 0) + p.get('elo_change', 0))
                     users_collection.update_one({'_id': p['user_id']}, {'$set': {'elo': new_elo}})
 
@@ -512,6 +540,11 @@ def next_word(room_code):
     
     # Bắt đầu luồng đếm ngược thời gian
     socketio.start_background_task(word_timer, room_code, current_round)
+    
+    # Nếu đang chơi với Bot, bắt đầu luồng suy nghĩ của Bot
+    if room.get('mode') == 'bot':
+        correct_answer = word_obj['en'] if current_qt in ['vi-en', 'collocation'] else word_obj['vi']
+        socketio.start_background_task(bot_worker, room_code, current_round, room.get('bot_difficulty', 'medium'), correct_answer)
 
 def evaluate_sync_round(room_code, room):
     qt = room.get('current_q_type', 'en-vi')
@@ -558,6 +591,48 @@ def word_timer(room_code, round_id):
 def delayed_next_word(room_code):
     socketio.sleep(2)
     next_word(room_code)
+
+def bot_worker(room_code, round_id, bot_difficulty, correct_answer):
+    # Tính thời gian phản hồi của Bot dựa trên độ khó
+    if bot_difficulty == 'easy':
+        delay = random.uniform(6.0, 11.0)
+        accuracy = 0.50
+    elif bot_difficulty == 'hard':
+        delay = random.uniform(1.2, 2.5)
+        accuracy = 0.95
+    else: # medium
+        delay = random.uniform(3.0, 6.0)
+        accuracy = 0.75
+
+    socketio.sleep(delay)
+    
+    if room_code not in rooms: return
+    room = rooms[room_code]
+    
+    with room['lock']:
+        # Bot chỉ trả lời nếu vẫn ở đúng round này, game chưa kết thúc và chưa có ai trả lời đúng
+        if room['round_id'] == round_id and not room['answered']:
+            is_correct = random.random() < accuracy
+            
+            bot_id = 'bot_player_id'
+            if bot_id not in room['players']:
+                return
+                
+            bot_player = room['players'][bot_id]
+            
+            if is_correct:
+                room['answered'] = True
+                room['winner_sid'] = bot_id
+                bot_player['score'] += 10
+                
+                players_data = list(room['players'].values())
+                socketio.emit('correct_answer', {
+                    'winner': bot_player['name'],
+                    'players': players_data,
+                    'correct_answer': correct_answer
+                }, room=room_code)
+                
+                socketio.start_background_task(delayed_next_word, room_code)
 
 @socketio.on('submit_answer')
 def on_submit_answer(data):
@@ -698,7 +773,26 @@ def handle_user_stats(data):
             mistakes = user.get('mistakes', {})
             now = time.time()
             due_count = sum(1 for w in mistakes.values() if w.get('next_review', 0) <= now)
-            emit('user_stats', {'mistakes_count': due_count, 'total_mistakes': len(mistakes)})
+            focus_history = user.get('focus_history', {})
+            emit('user_stats', {
+                'mistakes_count': due_count,
+                'total_mistakes': len(mistakes),
+                'focus_history': focus_history
+            })
+
+@socketio.on('sync_focus_time')
+def handle_sync_focus_time(data):
+    session_id = data.get('session_id')
+    date_str = data.get('date') # định dạng YYYY-MM-DD
+    minutes = int(data.get('minutes', 0))
+    if not session_id or not date_str or minutes <= 0:
+        return
+    if users_collection is not None:
+        users_collection.update_one(
+            {'_id': session_id},
+            {'$inc': {f'focus_history.{date_str}': minutes}},
+            upsert=True
+        )
 
 @socketio.on('request_flashcards')
 def handle_request_flashcards(data):

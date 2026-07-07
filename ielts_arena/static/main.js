@@ -268,6 +268,7 @@ btnCreate.addEventListener('click', () => {
     const qType = document.getElementById('question-type') ? document.getElementById('question-type').value : 'en-vi';
     const qCount = parseInt(randomQuestionCountInput.value) || 10;
     const vTopic = vocabTopicSelect ? vocabTopicSelect.value : 'all';
+    const botDifficulty = document.getElementById('bot-difficulty') ? document.getElementById('bot-difficulty').value : 'medium';
     
     let customVocabData = [];
     
@@ -293,10 +294,23 @@ btnCreate.addEventListener('click', () => {
         q_type: qType,
         question_count: qCount,
         vocab_topic: vTopic,
+        bot_difficulty: botDifficulty,
         session_id: mySessionId,
         elo: myElo
     });
 });
+
+const playModeSelectEl = document.getElementById('play-mode');
+const botDifficultyContainer = document.getElementById('bot-difficulty-container');
+if (playModeSelectEl && botDifficultyContainer) {
+    playModeSelectEl.addEventListener('change', () => {
+        if (playModeSelectEl.value === 'bot') {
+            botDifficultyContainer.style.display = 'block';
+        } else {
+            botDifficultyContainer.style.display = 'none';
+        }
+    });
+}
 
 // Bắt sự kiện tham gia
 btnJoin.addEventListener('click', () => {
@@ -486,6 +500,11 @@ socket.on('vocab_saved', (data) => {
 socket.on('game_start', (data) => {
     showScreen(arenaScreen);
     if(btnShowCreateVocab) btnShowCreateVocab.style.display = 'none';
+    
+    // Tạm dừng bộ đếm giờ Pomodoro nếu đang chạy
+    if (window.timekeeperPauseForGame) {
+        window.timekeeperPauseForGame();
+    }
     
     // Show Admin Panel if applicable
     const adminPanel = document.getElementById('admin-skills-panel');
@@ -709,6 +728,16 @@ const btnPlayAgain = document.getElementById('btn-play-again');
 socket.on('game_over', (data) => {
     clearInterval(timerInterval);
     showScreen(summaryScreen);
+    
+    // Tự động khôi phục lại bộ đếm giờ Pomodoro nếu trước đó bị tạm dừng
+    if (window.timekeeperResumeAfterGame) {
+        window.timekeeperResumeAfterGame();
+    }
+    
+    // Tăng tiến trình mục tiêu trận đấu (Arena)
+    if (window.dailyGoalsAddGame) {
+        window.dailyGoalsAddGame(1);
+    }
     
     const players = data.players;
     if (players.length === 1) {
@@ -1279,6 +1308,11 @@ function throwCard(cardEl, x, y, status, wordData) {
     cardEl.style.transform = `translate(${x}px, ${y}px) rotate(${x * 0.1}deg)`;
     cardEl.style.opacity = 0;
     
+    // Tăng tiến trình mục tiêu ôn tập (SRS/Flashcards)
+    if (window.dailyGoalsAddReview) {
+        window.dailyGoalsAddReview(1);
+    }
+
     // Gửi kết quả về server
     socket.emit('flashcard_result', {
         session_id: mySessionId,
@@ -1635,6 +1669,72 @@ setInterval(sendKeepAlivePing, 5 * 60 * 1000);
     let tkCurrentState = 'focus'; // 'focus' or 'break'
     let tkEndTime = 0;
     let tkTotalFocusMinutes = parseInt(localStorage.getItem('tk_total_focus')) || 0;
+    
+    // Khởi tạo lịch sử học tập từng ngày từ localStorage
+    let tkDailyHistory = {};
+    try {
+        tkDailyHistory = JSON.parse(localStorage.getItem('tk_daily_history') || '{}');
+    } catch(e) {
+        tkDailyHistory = {};
+    }
+
+    // Lấy ngày hôm nay theo giờ địa phương YYYY-MM-DD
+    function getLocalDateString() {
+        const d = new Date();
+        const offset = d.getTimezoneOffset();
+        const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+        return localDate.toISOString().split('T')[0];
+    }
+
+    // Hàm vẽ biểu đồ mini 7 ngày
+    function renderWeeklyChart() {
+        const chartContainer = document.getElementById('timekeeper-chart');
+        if (!chartContainer) return;
+        chartContainer.innerHTML = '';
+        
+        const weekdays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+        const last7Days = [];
+        
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            
+            const year = d.getFullYear();
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const date = d.getDate().toString().padStart(2, '0');
+            const dateStr = `${year}-${month}-${date}`;
+            
+            last7Days.push({
+                dateStr: dateStr,
+                dayName: weekdays[d.getDay()],
+                val: tkDailyHistory[dateStr] || 0,
+                isToday: i === 0
+            });
+        }
+        
+        // Tìm giá trị cao nhất để tính chiều cao cột (tối thiểu chia 60p để căn đều cột)
+        const maxVal = Math.max(...last7Days.map(x => x.val), 60);
+        
+        last7Days.forEach(day => {
+            const heightPct = Math.round((day.val / maxVal) * 100);
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-bar-wrapper';
+            
+            const bar = document.createElement('div');
+            bar.className = 'chart-bar' + (day.isToday ? ' current-day' : '');
+            bar.style.height = `${Math.max(heightPct, 5)}%`; // Tối thiểu 5% để có vệt chân
+            bar.setAttribute('data-val', day.val);
+            
+            const label = document.createElement('span');
+            label.className = 'chart-label';
+            label.textContent = day.dayName;
+            
+            wrapper.appendChild(bar);
+            wrapper.appendChild(label);
+            chartContainer.appendChild(wrapper);
+        });
+    }
 
     // Web Audio API Sound System (Ding-Dong Chimes)
     function playTimekeeperSound(type) {
@@ -1693,11 +1793,37 @@ setInterval(sendKeepAlivePing, 5 * 60 * 1000);
         document.title = `(${timeStr}) ${stateText} | IELTS Arena`;
         
         if (tkTimeLeft <= 0) {
+            // Đổi từ vựng IELTS Booster ngẫu nhiên khi chuyển phiên
+            rotateBoosterWord();
+            
             if (tkCurrentState === 'focus') {
                 const studiedMins = parseInt(tkStudyInput.value) || 0;
+                
+                // Cập nhật tiến trình mục tiêu daily
+                if (window.dailyGoalsAddFocus) {
+                    window.dailyGoalsAddFocus(studiedMins);
+                }
+                
+                // Cập nhật tổng số phút hôm nay
                 tkTotalFocusMinutes += studiedMins;
                 localStorage.setItem('tk_total_focus', tkTotalFocusMinutes);
                 tkTotalFocusSpan.textContent = tkTotalFocusMinutes;
+                
+                // Cập nhật lịch sử ngày
+                const todayStr = getLocalDateString();
+                tkDailyHistory[todayStr] = (tkDailyHistory[todayStr] || 0) + studiedMins;
+                localStorage.setItem('tk_daily_history', JSON.stringify(tkDailyHistory));
+                
+                // Đồng bộ lên MongoDB
+                if (typeof socket !== 'undefined' && socket.connected && typeof mySessionId !== 'undefined') {
+                    socket.emit('sync_focus_time', {
+                        session_id: mySessionId,
+                        date: todayStr,
+                        minutes: studiedMins
+                    });
+                }
+                
+                renderWeeklyChart();
                 
                 tkCurrentState = 'break';
                 tkStatusBadge.textContent = 'Đang nghỉ ☕';
@@ -1822,10 +1948,300 @@ setInterval(sendKeepAlivePing, 5 * 60 * 1000);
         }
     });
 
-    // Initialize stats
+    // ==========================================================================
+    // ARENA SYNC - AUTO PAUSE/RESUME CONTROLS (EXPOSED TO WINDOW)
+    // ==========================================================================
+    let tkWasRunningBeforeGame = false;
+    
+    window.timekeeperPauseForGame = function() {
+        if (tkIsRunning) {
+            tkWasRunningBeforeGame = true;
+            tkStart(); // Tạm dừng
+            console.log('[Timekeeper] Game started. Pausing study timer...');
+        }
+    };
+    
+    window.timekeeperResumeAfterGame = function() {
+        if (tkWasRunningBeforeGame) {
+            tkWasRunningBeforeGame = false;
+            tkStart(); // Chạy lại
+            console.log('[Timekeeper] Game ended. Resuming study timer...');
+        }
+    };
+
+    // ==========================================================================
+    // DATABASE SYNC - MERGE DATABASE HISTORY WITH LOCAL HISTORY
+    // ==========================================================================
+    window.timekeeperSyncFromDatabase = function(dbHistory) {
+        if (!dbHistory) return;
+        let localUpdated = false;
+        
+        for (const [dateStr, dbVal] of Object.entries(dbHistory)) {
+            const localVal = tkDailyHistory[dateStr] || 0;
+            if (dbVal > localVal) {
+                tkDailyHistory[dateStr] = dbVal;
+                localUpdated = true;
+            }
+        }
+        
+        if (localUpdated) {
+            localStorage.setItem('tk_daily_history', JSON.stringify(tkDailyHistory));
+            
+            // Cập nhật lại tổng số phút tập trung tích lũy
+            let total = 0;
+            for (const val of Object.values(tkDailyHistory)) {
+                total += val;
+            }
+            localStorage.setItem('tk_total_focus', total);
+            tkTotalFocusMinutes = total;
+            tkTotalFocusSpan.textContent = total;
+            
+            renderWeeklyChart();
+        }
+    };
+
+    // ==========================================================================
+    // IELTS VOCAB BOOSTER LOGIC
+    // ==========================================================================
+    const tkBooster = document.getElementById('timekeeper-booster');
+    const boosterOld = document.getElementById('booster-old');
+    const boosterNew = document.getElementById('booster-new');
+
+    const ieltsBoosterWords = [
+        { old: "important (Band 5.0)", new: "paramount / crucial / indispensable (Band 7.5+)" },
+        { old: "very bad (Band 5.0)", new: "abysmal / deplorable / dreadful (Band 7.5+)" },
+        { old: "solve a problem (Band 5.0)", new: "tackle an issue / address a problem (Band 7.5+)" },
+        { old: "show (Band 5.0)", new: "demonstrate / illustrate / depict (Band 7.0+)" },
+        { old: "rich (Band 5.0)", new: "affluent / wealthy / well-off (Band 7.0+)" },
+        { old: "poor (Band 5.0)", new: "impoverished / underprivileged (Band 7.5+)" },
+        { old: "agree (Band 5.0)", new: "concur with / subscribe to the view (Band 7.5+)" },
+        { old: "change (Band 5.0)", new: "alter / modify / transform (Band 7.0+)" },
+        { old: "think (Band 5.0)", new: "reckon / harbor the view that (Band 7.5+)" },
+        { old: "famous (Band 5.0)", new: "renowned / celebrated / prominent (Band 7.5+)" },
+        { old: "good (Band 5.0)", new: "beneficial / advantageous (Band 7.0+)" },
+        { old: "bad (Band 5.0)", new: "detrimental / adverse / damaging (Band 7.5+)" },
+        { old: "big (Band 5.0)", new: "colossal / mammoth / substantial (Band 7.5+)" },
+        { old: "many (Band 5.0)", new: "myriad / a plethora of / numerous (Band 7.5+)" },
+        { old: "difficult (Band 5.0)", new: "challenging / arduous / formidable (Band 7.5+)" },
+        { old: "use (Band 5.0)", new: "utilize / harness / exploit (Band 7.0+)" },
+        { old: "clear (Band 5.0)", new: "evident / apparent / manifest (Band 7.0+)" },
+        { old: "happen (Band 5.0)", new: "occur / transpire (Band 7.5+)" },
+        { old: "stop (Band 5.0)", new: "cease / halt / discontinue (Band 7.5+)" },
+        { old: "enough (Band 5.0)", new: "adequate / sufficient (Band 7.0+)" },
+        { old: "get (Band 5.0)", new: "acquire / obtain / attain (Band 7.0+)" },
+        { old: "help (Band 5.0)", new: "assist / facilitate / aid (Band 7.0+)" },
+        { old: "make (Band 5.0)", new: "generate / create / manufacture (Band 7.0+)" },
+        { old: "new (Band 5.0)", new: "novel / innovative / state-of-the-art (Band 7.5+)" },
+        { old: "old (Band 5.0)", new: "archaic / ancient / obsolete (Band 7.5+)" }
+    ];
+
+    let lastBoosterIndex = -1;
+    function rotateBoosterWord() {
+        if (!boosterOld || !boosterNew || ieltsBoosterWords.length === 0) return;
+        let randIdx;
+        do {
+            randIdx = Math.floor(Math.random() * ieltsBoosterWords.length);
+        } while (randIdx === lastBoosterIndex && ieltsBoosterWords.length > 1);
+        
+        lastBoosterIndex = randIdx;
+        const pair = ieltsBoosterWords[randIdx];
+        boosterOld.textContent = pair.old;
+        boosterNew.textContent = pair.new;
+    }
+
+    if (tkBooster) {
+        tkBooster.addEventListener('click', (e) => {
+            e.stopPropagation(); // Tránh kích hoạt mở rộng widget khi đang collapsed
+            rotateBoosterWord();
+        });
+    }
+
+    // Khởi tạo stats & biểu đồ khi load trang
     tkTotalFocusSpan.textContent = tkTotalFocusMinutes;
     const initialMins = parseInt(tkStudyInput.value) || 25;
     tkTimeLeft = initialMins * 60;
     tkTimer.textContent = formatTime(tkTimeLeft);
     tkBtnToggle.setAttribute('data-time', formatTime(tkTimeLeft));
+    
+    renderWeeklyChart();
+    rotateBoosterWord();
+})();
+
+// ==========================================================================
+// DAILY LEARNING GOALS MODULE
+// ==========================================================================
+(function() {
+    const btnEditGoals = document.getElementById('btn-edit-goals');
+    const modalSettings = document.getElementById('goal-settings-modal');
+    const btnCancelGoals = document.getElementById('btn-cancel-goals');
+    const btnSaveGoals = document.getElementById('btn-save-goals');
+    
+    const inputFocus = document.getElementById('input-goal-focus');
+    const inputReview = document.getElementById('input-goal-review');
+    const inputGames = document.getElementById('input-goal-games');
+    
+    const displayFocusCurrent = document.getElementById('goal-focus-current');
+    const displayFocusTarget = document.getElementById('goal-focus-target');
+    const progressFocus = document.getElementById('goal-focus-progress');
+    
+    const displayReviewCurrent = document.getElementById('goal-review-current');
+    const displayReviewTarget = document.getElementById('goal-review-target');
+    const progressReview = document.getElementById('goal-review-progress');
+    
+    const displayGamesCurrent = document.getElementById('goal-games-current');
+    const displayGamesTarget = document.getElementById('goal-games-target');
+    const progressGames = document.getElementById('goal-games-progress');
+    
+    if (!displayFocusCurrent || !displayReviewCurrent || !displayGamesCurrent) {
+        console.warn('Daily goals elements not found.');
+        return;
+    }
+
+    // Lấy chuỗi ngày địa phương YYYY-MM-DD
+    function getTodayDateStr() {
+        const d = new Date();
+        const offset = d.getTimezoneOffset();
+        const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+        return localDate.toISOString().split('T')[0];
+    }
+
+    // Tải các Mục tiêu tùy chỉnh từ LocalStorage
+    let focusTarget = parseInt(localStorage.getItem('dg_focus_target')) || 50;
+    let reviewTarget = parseInt(localStorage.getItem('dg_review_target')) || 10;
+    let gamesTarget = parseInt(localStorage.getItem('dg_games_target')) || 2;
+
+    // Tải hoặc khởi tạo tiến trình ngày hôm nay
+    let dailyProgress = {
+        date: getTodayDateStr(),
+        focus: 0,
+        review: 0,
+        games: 0
+    };
+
+    try {
+        const savedProgress = JSON.parse(localStorage.getItem('dg_daily_progress') || '{}');
+        const today = getTodayDateStr();
+        if (savedProgress && savedProgress.date === today) {
+            dailyProgress = savedProgress;
+        } else {
+            // Ngày mới, tự động reset tiến trình về 0
+            dailyProgress = {
+                date: today,
+                focus: 0,
+                review: 0,
+                games: 0
+            };
+            localStorage.setItem('dg_daily_progress', JSON.stringify(dailyProgress));
+        }
+    } catch(e) {
+        console.error('Error loading daily progress:', e);
+    }
+
+    // Hàm cập nhật hiển thị giao diện Mục tiêu
+    function updateGoalsUI() {
+        // Cập nhật text Mục tiêu (Target)
+        if (displayFocusTarget) displayFocusTarget.textContent = focusTarget;
+        if (displayReviewTarget) displayReviewTarget.textContent = reviewTarget;
+        if (displayGamesTarget) displayGamesTarget.textContent = gamesTarget;
+
+        // Cập nhật text Tiến trình hiện tại (Current)
+        if (displayFocusCurrent) displayFocusCurrent.textContent = dailyProgress.focus;
+        if (displayReviewCurrent) displayReviewCurrent.textContent = dailyProgress.review;
+        if (displayGamesCurrent) displayGamesCurrent.textContent = dailyProgress.games;
+
+        // Cập nhật phần trăm thanh tiến trình (Progress bar)
+        if (progressFocus) {
+            const pct = Math.min(100, Math.round((dailyProgress.focus / focusTarget) * 100));
+            progressFocus.style.width = `${pct}%`;
+        }
+        if (progressReview) {
+            const pct = Math.min(100, Math.round((dailyProgress.review / reviewTarget) * 100));
+            progressReview.style.width = `${pct}%`;
+        }
+        if (progressGames) {
+            const pct = Math.min(100, Math.round((dailyProgress.games / gamesTarget) * 100));
+            progressGames.style.width = `${pct}%`;
+        }
+    }
+
+    // Hàm lưu tiến trình
+    function saveProgress() {
+        localStorage.setItem('dg_daily_progress', JSON.stringify(dailyProgress));
+        updateGoalsUI();
+    }
+
+    // Xuất ra phạm vi window để các module khác cập nhật tiến trình
+    window.dailyGoalsAddFocus = function(mins) {
+        const today = getTodayDateStr();
+        if (dailyProgress.date !== today) {
+            dailyProgress = { date: today, focus: 0, review: 0, games: 0 };
+        }
+        dailyProgress.focus += mins;
+        saveProgress();
+    };
+
+    window.dailyGoalsAddReview = function(count) {
+        const today = getTodayDateStr();
+        if (dailyProgress.date !== today) {
+            dailyProgress = { date: today, focus: 0, review: 0, games: 0 };
+        }
+        dailyProgress.review += count;
+        saveProgress();
+    };
+
+    window.dailyGoalsAddGame = function(count) {
+        const today = getTodayDateStr();
+        if (dailyProgress.date !== today) {
+            dailyProgress = { date: today, focus: 0, review: 0, games: 0 };
+        }
+        dailyProgress.games += count;
+        saveProgress();
+    };
+
+    // Sự kiện mở modal cài đặt
+    if (btnEditGoals && modalSettings) {
+        btnEditGoals.addEventListener('click', () => {
+            if (inputFocus) inputFocus.value = focusTarget;
+            if (inputReview) inputReview.value = reviewTarget;
+            if (inputGames) inputGames.value = gamesTarget;
+            modalSettings.style.display = 'flex';
+        });
+    }
+
+    if (btnCancelGoals && modalSettings) {
+        btnCancelGoals.addEventListener('click', () => {
+            modalSettings.style.display = 'none';
+        });
+    }
+
+    if (btnSaveGoals && modalSettings) {
+        btnSaveGoals.addEventListener('click', () => {
+            const newFocus = parseInt(inputFocus.value) || 50;
+            const newReview = parseInt(inputReview.value) || 10;
+            const newGames = parseInt(inputGames.value) || 2;
+
+            focusTarget = Math.max(1, newFocus);
+            reviewTarget = Math.max(1, newReview);
+            gamesTarget = Math.max(1, newGames);
+
+            localStorage.setItem('dg_focus_target', focusTarget);
+            localStorage.setItem('dg_review_target', reviewTarget);
+            localStorage.setItem('dg_games_target', gamesTarget);
+
+            updateGoalsUI();
+            modalSettings.style.display = 'none';
+        });
+    }
+
+    // Tắt modal khi click ra ngoài vùng nội dung
+    if (modalSettings) {
+        modalSettings.addEventListener('click', (e) => {
+            if (e.target === modalSettings) {
+                modalSettings.style.display = 'none';
+            }
+        });
+    }
+
+    // Khởi động hiển thị giao diện
+    updateGoalsUI();
 })();

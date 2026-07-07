@@ -42,6 +42,24 @@
             <div class="timekeeper-stats">
                 <span>Tập trung hôm nay: <strong id="timekeeper-total-focus">0</strong> phút</span>
             </div>
+            
+            <!-- Biểu đồ lịch sử tuần -->
+            <div class="timekeeper-chart-container">
+                <div class="chart-title">Lịch sử 7 ngày qua (phút)</div>
+                <div id="timekeeper-chart" class="chart-bars">
+                    <!-- Các cột biểu đồ sẽ được chèn động bằng JS -->
+                </div>
+            </div>
+
+            <!-- Trình nâng cấp từ vựng IELTS Booster -->
+            <div id="timekeeper-booster" class="timekeeper-booster-container" title="Click để đổi từ ngẫu nhiên">
+                <div class="booster-header">💡 IELTS Vocab Booster</div>
+                <div class="booster-content">
+                    <span id="booster-old" class="booster-old">important (Band 5.0)</span>
+                    <span class="booster-arrow">➔</span>
+                    <span id="booster-new" class="booster-new">paramount / crucial (Band 7.5+)</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -60,7 +78,18 @@
                         <option value="sync">Chơi Đôi (Đồng Bộ So Tài)</option>
                         <option value="multi3">Chơi 3 Người (Nhanh tay)</option>
                         <option value="sync3">Chơi 3 Người (Đồng Bộ)</option>
+                        <option value="bot">Solo với AI Bot 🤖</option>
                     </select>
+
+                    <!-- Lựa chọn độ khó cho AI Bot -->
+                    <div id="bot-difficulty-container" style="display: none; margin-bottom: 10px;">
+                        <label style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 5px; display: block;">Chọn đối thủ AI:</label>
+                        <select id="bot-difficulty" style="width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 1rem; outline: none; transition: border 0.3s;">
+                            <option value="easy">🧒 Học sinh (Dễ - Chậm & Hay sai)</option>
+                            <option value="medium" selected>👨‍🏫 Giáo viên IELTS (Vừa - Chuẩn & Cân sức)</option>
+                            <option value="hard">🤖 Oxford Bot (Khó - Siêu tốc & Hoàn hảo)</option>
+                        </select>
+                    </div>
 
                     <label style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 5px; display: block;">Loại câu hỏi:</label>
                     <select id="question-type" style="width: 100%; padding: 14px; margin-bottom: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 1rem; outline: none; transition: border 0.3s;">
@@ -117,6 +146,72 @@
                 <div style="margin-top: 20px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; display: flex; align-items: center; justify-content: center; gap: 10px;">
                     <span style="color: var(--text-muted); font-size: 0.9rem;">Hạng của bạn:</span>
                     <span id="lobby-rank-display" style="font-weight: bold; font-size: 1.1rem; color: #fbbf24;">Trứng Nước 🌱 (0 Elo)</span>
+                </div>
+            </div>
+
+            <!-- Thẻ Mục Tiêu Học Tập Hàng Ngày (Daily Goals Card) -->
+            <div class="card daily-goals-card" style="margin-top: 20px; text-align: left;">
+                <div class="goals-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; font-size: 1.1rem; color: #fbbf24; display: flex; align-items: center; gap: 8px;">🎯 Mục Tiêu Hôm Nay</h3>
+                    <button id="btn-edit-goals" class="btn-edit-goals" title="Điều chỉnh mục tiêu" style="background: transparent; border: none; color: #60a5fa; cursor: pointer; font-size: 0.85rem; font-weight: bold; padding: 0;">⚙️ Cài đặt</button>
+                </div>
+                
+                <!-- Goals List (Progress Bars) -->
+                <div class="goal-item" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                        <span>✍️ Thời gian tập trung (Pomodoro):</span>
+                        <span id="goal-focus-text"><strong id="goal-focus-current">0</strong> / <span id="goal-focus-target">50</span> phút</span>
+                    </div>
+                    <div class="progress-bar-bg" style="width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
+                        <div id="goal-focus-progress" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+
+                <div class="goal-item" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                        <span>📓 Ôn tập từ hay sai (SRS/Flashcards):</span>
+                        <span id="goal-review-text"><strong id="goal-review-current">0</strong> / <span id="goal-review-target">10</span> từ</span>
+                    </div>
+                    <div class="progress-bar-bg" style="width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
+                        <div id="goal-review-progress" style="width: 0%; height: 100%; background: #ec4899; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+
+                <div class="goal-item" style="margin-bottom: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                        <span>⚔️ Trận đấu đã chơi (Arena):</span>
+                        <span id="goal-games-text"><strong id="goal-games-current">0</strong> / <span id="goal-games-target">2</span> trận</span>
+                    </div>
+                    <div class="progress-bar-bg" style="width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
+                        <div id="goal-games-progress" style="width: 0%; height: 100%; background: #10b981; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Cài đặt Mục tiêu (Goal Setting Modal) -->
+            <div id="goal-settings-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+                <div class="modal-content" style="background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; width: 300px; max-width: 90%; text-align: left; box-shadow: 0 10px 25px rgba(0,0,0,0.4);">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; color: #fbbf24; font-size: 1.1rem;">⚙️ Thiết lập Mục tiêu Daily</h3>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Thời gian tập trung (phút):</label>
+                        <input type="number" id="input-goal-focus" value="50" min="1" max="600" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: white;">
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Số từ hay sai cần ôn (từ):</label>
+                        <input type="number" id="input-goal-review" value="10" min="1" max="100" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: white;">
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Số trận đấu cần chơi (trận):</label>
+                        <input type="number" id="input-goal-games" value="2" min="1" max="50" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: white;">
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="btn-cancel-goals" class="btn secondary" style="padding: 8px 12px; font-size: 0.85rem; width: auto; margin-bottom: 0;">Hủy</button>
+                        <button id="btn-save-goals" class="btn primary" style="padding: 8px 12px; font-size: 0.85rem; width: auto; margin-bottom: 0;">Lưu lại</button>
+                    </div>
                 </div>
             </div>
             
